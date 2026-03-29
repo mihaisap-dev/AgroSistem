@@ -4,7 +4,7 @@ AgroSistem este o soluție software completă (Full-Stack) creată pentru digita
 
 ---
 
-## 🚀 Funcționalități Principale
+##  Funcționalități Principale
 
 Aplicația este structurată în 8 secțiuni (tab-uri) principale:
 
@@ -63,7 +63,7 @@ Aplicația este structurată în 8 secțiuni (tab-uri) principale:
 
 ---
 
-## ⚙️ Procese "Sub Capotă"
+##  Procese 
 
 1.  **Sincronizarea Bazei de Date**: La pornire, serverul verifică și actualizează automat structura tabelelor fără a șterge datele existente (`sequelize.sync({ alter: true })`).
 2.  **Middleware de Protecție**: Toate cererile către API (în afară de Login/Register) trec printr-un filtru care verifică validitatea token-ului JWT.
@@ -71,7 +71,7 @@ Aplicația este structurată în 8 secțiuni (tab-uri) principale:
 
 ---
 
-## 💻 Cum se instalează și rulează
+##  Cum se instalează și rulează
 
 ### Cerințe:
 *   Node.js (versiune 18 sau mai mare)
@@ -103,9 +103,6 @@ Aplicația este structurată în 8 secțiuni (tab-uri) principale:
 3.  Accesează aplicația la: `http://localhost:5001`
 
 ---
-
-## ☁️ Deployment (Render.com)
-Aplicația este configurată să fie urcată pe Render.com. Aceasta va detecta automat `DATABASE_URL` oferit de Render și va servi interfața grafică pe URL-ul public generat.
 
 ---
 *Creat cu iubire pentru eficientizarea muncii în agricultură.*
