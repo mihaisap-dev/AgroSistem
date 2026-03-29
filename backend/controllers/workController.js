@@ -135,6 +135,9 @@ exports.getTechSheet = async (req, res) => {
       if (w.products && !grouped[key].products.includes(w.products)) grouped[key].products.push(w.products);
     }
 
+    // Collect all materials consumed (products with qty from ANY category)
+    const materialsMap = {};
+
     for (const [, g] of Object.entries(grouped)) {
       const entry = {
         name: g.name,
@@ -151,7 +154,31 @@ exports.getTechSheet = async (req, res) => {
       else if (g.category === 'Lucrări manuale') manual.push(entry);
       else if (g.category === 'Input-uri') inputs.push(entry);
       else mechanical.push(entry);
+
+      // If this work has products and qty, add to materials consumed
+      if (g.products.length > 0 && g.totalQty > 0) {
+        for (const prod of g.products) {
+          const mKey = `${prod}-${g.unit}`;
+          if (!materialsMap[mKey]) {
+            materialsMap[mKey] = { product: prod, totalQty: 0, unit: g.unit, totalArea: 0, period: g.periods.join(', '), workName: g.name };
+          }
+          materialsMap[mKey].totalQty += g.totalQty;
+          materialsMap[mKey].totalArea = Math.max(materialsMap[mKey].totalArea, g.totalArea);
+          if (g.periods.length > 0 && !materialsMap[mKey].period.includes(g.periods[0])) {
+            materialsMap[mKey].period += ', ' + g.periods.join(', ');
+          }
+        }
+      }
     }
+
+    const materials = Object.values(materialsMap).map(m => ({
+      product: m.product,
+      totalQty: Math.round(m.totalQty * 100) / 100,
+      unit: m.unit,
+      qtyPerHa: m.totalArea > 0 ? Math.round((m.totalQty / m.totalArea) * 100) / 100 : 0,
+      period: m.period,
+      workName: m.workName
+    }));
 
     res.json({
       crop: crop ? crop.toJSON() : null,
@@ -160,7 +187,8 @@ exports.getTechSheet = async (req, res) => {
       parcelCount,
       mechanical,
       manual,
-      inputs
+      inputs,
+      materials
     });
   } catch (error) {
     console.error('Eroare la generarea fisei tehnologice:', error.message);

@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const path = require('path');
 const { connectDB, sequelize } = require('./config/db');
 const models = require('./models');
 const initCrops = require('./config/initCrops');
@@ -33,7 +34,7 @@ const startServer = async () => {
 
     app.use(express.json());
 
-    // Rute
+    // Rute API
     app.use('/api/auth', require('./routes/authRoutes'));
     app.use('/api/farms', require('./routes/farmRoutes'));
     app.use('/api/blocks', require('./routes/blockRoutes'));
@@ -45,12 +46,19 @@ const startServer = async () => {
     app.use('/api/fuel', require('./routes/fuelRoutes'));
     app.use('/api/reports', require('./routes/reportRoutes'));
 
-    app.get('/', (req, res) => {
-      res.send('API AgroSistem ruleaza corect!');
+    // SERVIRE FRONTEND (Production Build)
+    const frontendPath = path.join(__dirname, '../frontend/build');
+    app.use(express.static(frontendPath));
+
+    // Orice ruta care nu e API va returna index.html din frontend
+    // Folosim un RegExp pentru a fi compatibili cu Express 5
+    app.get(/^\/(?!api).*/, (req, res) => {
+      res.sendFile(path.join(frontendPath, 'index.html'));
     });
 
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`Serverul ruleaza pe portul: ${PORT}`);
+      console.log(`Aplicatia poate fi accesata la: http://localhost:${PORT}`);
     });
   } catch (error) {
     console.error('Eroare la pornirea serverului:', error.message);

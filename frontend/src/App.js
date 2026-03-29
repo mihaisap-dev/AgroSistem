@@ -569,12 +569,12 @@ function TabCulturi({ token, blocks, crops, seasons, onRefresh }) {
         </div>
         {selParcel && selCrop && checkRotation(selParcel, selCrop, year) && <div style={{ marginTop: 12, color: C.danger, fontSize: 13, fontWeight: 600 }}>Aceeasi cultura a fost pe aceasta parcela anul trecut!</div>}
       </Card>
-      <Card title="Istoric Culturi" actions={<Btn variant="secondary" onClick={() => exportCSV(["An", "Sezon", "Bloc", "Parcela", "Cultura", "Rotatie"], seasons.map((s) => [s.year, s.season, s.parcel?.block?.blockNumber, s.parcel?.parcelNumber, s.cultura?.name, s.rotationWarning ? "Alerta" : "OK"]), "istoric_culturi.csv")}>Exporta CSV</Btn>}>
+      <Card title="Istoric Culturi" actions={<Btn variant="secondary" onClick={() => exportCSV(["An", "Sezon", "Bloc Fizic", "Nr. Parcela", "Suprafata (ha)", "Cultura", "Rotatie"], seasons.map((s) => [s.year, s.season, s.parcel?.block?.blockNumber, s.parcel?.parcelNumber, s.parcel?.areaHa, s.cultura?.name, s.rotationWarning ? "Nerespectata" : "OK"]), "istoric_culturi.csv")}>Exporta CSV</Btn>}>
         <Table
-          headers={["An", "Sezon", "Bloc", "Parcela", "Cultura", "Rotatie", "Actiuni"]}
+          headers={["An", "Sezon", "Bloc Fizic", "Nr. Parcela", "Suprafata (ha)", "Cultura", "Rotatie", "Actiuni"]}
           rows={seasons.map((s) => [
-            s.year, s.season, s.parcel?.block?.blockNumber, s.parcel?.parcelNumber, s.cultura?.name,
-            s.rotationWarning ? <span style={{ color: C.danger, fontWeight: 600 }}>Alerta</span> : <span style={{ color: C.success }}>OK</span>,
+            s.year, s.season, s.parcel?.block?.blockNumber, s.parcel?.parcelNumber, s.parcel?.areaHa, s.cultura?.name,
+            s.rotationWarning ? <span style={{ color: C.danger, fontWeight: 600 }}>&#9888; Nerespectată</span> : <span style={{ color: C.forestLight }}>OK</span>,
             <Btn variant="smallDanger" onClick={() => setDeleteTarget(s.id)}>Sterge</Btn>
           ])}
         />
@@ -641,19 +641,22 @@ function TabLucrari({ token, seasons, workTypes, works, onRefresh }) {
           <Btn onClick={addWork} disabled={loading}>Adauga lucrarea</Btn>
         </div>
       </Card>
-      <Card title="Registru Centralizator Lucrari" actions={
+      <Card title="Registru Centralizator Lucrari Agricole" actions={
         <div style={{ display: "flex", gap: 8 }}>
           <Select value={filterCrop} onChange={(e) => setFilterCrop(e.target.value)} options={uniqueCrops.map((c) => ({ value: c, label: c }))} style={{ fontSize: 12, padding: "4px 8px" }} />
           <Select value={filterCat} onChange={(e) => setFilterCat(e.target.value)} options={uniqueCats.map((c) => ({ value: c, label: c }))} style={{ fontSize: 12, padding: "4px 8px" }} />
-          <Btn variant="secondary" onClick={() => exportCSV(["Sola", "Cultura", "Lucrare", "Categorie", "An", "Perioada", "Utilaj", "Produse", "Cant./ha", "U.M."], filtered.map((w) => [`B${w.sezon?.parcel?.block?.blockNumber}/P${w.sezon?.parcel?.parcelNumber}`, w.sezon?.cultura?.name, w.tip?.name, w.tip?.category, w.sezon?.year, w.period, w.equipment, w.products, w.qtyPerHa, w.unit]), "lucrari.csv")}>Exporta CSV</Btn>
+          <Btn variant="secondary" onClick={() => exportCSV(["Categorie", "Lucrare", "Perioada", "Cultură", "Suprafață (ha)", "Parcelă", "Utilaj", "Produse", "Cant./ha", "U.M."], filtered.map((w) => [w.tip?.category, w.tip?.name, w.period, w.sezon?.cultura?.name, w.sezon?.parcel?.areaHa, `B${w.sezon?.parcel?.block?.blockNumber}/P${w.sezon?.parcel?.parcelNumber}`, w.equipment, w.products, w.qtyPerHa, w.unit]), "lucrari.csv")}>Exporta CSV</Btn>
         </div>
       }>
         <Table
-          headers={["Sola", "Cultura", "Lucrare", "Categorie", "An", "Perioada", "Utilaj", "Cant./ha", "Actiuni"]}
+          headers={["Categorie", "Lucrare", "Perioada", "Cultură", "Suprafață", "Parcelă", "Utilaj", "Produse", "Cant./ha", "U.M.", "Acțiuni"]}
           rows={filtered.map((w) => [
+            w.tip?.category, w.tip?.name, w.period, w.sezon?.cultura?.name, w.sezon?.parcel?.areaHa,
             `B${w.sezon?.parcel?.block?.blockNumber}/P${w.sezon?.parcel?.parcelNumber}`,
-            w.sezon?.cultura?.name, w.tip?.name, w.tip?.category, w.sezon?.year, w.period, w.equipment,
-            w.qtyPerHa ? `${w.qtyPerHa} ${w.unit || "kg"}` : "-",
+            w.equipment || "-",
+            w.products || "-",
+            w.qtyPerHa || "-",
+            w.unit || "-",
             <Btn variant="smallDanger" onClick={() => setDeleteTarget(w.id)}>Sterge</Btn>
           ])}
         />
@@ -693,16 +696,20 @@ function TabFiseTehnice({ farmId, token, crops, seasons }) {
     rows.push([`Numar parcele: ${sheet.parcelCount}`]);
     rows.push([]);
     rows.push(["LUCRARI MECANICE"]);
-    rows.push(["Denumire", "Perioada", "Suprafata (ha)", "Utilaj"]);
-    sheet.mechanical.forEach((m) => rows.push([m.name, m.period, m.totalArea, m.equipment]));
+    rows.push(["Lucrare", "Perioada", "Utilaj", "Produse", "Cant./ha", "U.M."]);
+    sheet.mechanical.forEach((m) => rows.push([m.name, m.period, m.equipment, m.products, m.qtyPerHa, m.unit]));
     rows.push([]);
     rows.push(["LUCRARI MANUALE"]);
-    rows.push(["Denumire", "Perioada", "Suprafata (ha)"]);
-    sheet.manual.forEach((m) => rows.push([m.name, m.period, m.totalArea]));
+    rows.push(["Lucrare", "Perioada", "Utilaj", "Produse", "Cant./ha", "U.M."]);
+    sheet.manual.forEach((m) => rows.push([m.name, m.period, m.equipment, m.products, m.qtyPerHa, m.unit]));
     rows.push([]);
     rows.push(["INPUT-URI"]);
-    rows.push(["Produs", "Cantitate Totala", "U.M.", "Cant./ha", "Perioada"]);
-    sheet.inputs.forEach((inp) => rows.push([inp.products || inp.name, inp.totalQty, inp.unit, inp.qtyPerHa, inp.period]));
+    rows.push(["Lucrare", "Perioada", "Utilaj", "Produse", "Cant./ha", "U.M."]);
+    sheet.inputs.forEach((inp) => rows.push([inp.name, inp.period, inp.equipment, inp.products || "", inp.qtyPerHa, inp.unit]));
+    rows.push([]);
+    rows.push(["MATERIALE CONSUMATE (DIN TOATE CATEGORIILE)"]);
+    rows.push(["Produs", "Lucrare", "Cantitate Totala", "U.M.", "Cant./ha", "Perioada"]);
+    (sheet.materials || []).forEach((m) => rows.push([m.product, m.workName || "", m.totalQty, m.unit, m.qtyPerHa, m.period]));
     exportCSV([], rows, `fisa_tehnologica_${sheet.crop?.name}_${sheet.year}.csv`);
   };
 
@@ -717,20 +724,25 @@ function TabFiseTehnice({ farmId, token, crops, seasons }) {
       </Card>
 
       {sheet && (
-        <Card title={`Fisa Tehnologica — ${sheet.crop?.name || "-"} (${sheet.year})`} actions={<Btn variant="secondary" onClick={exportSheet}>Exporta CSV</Btn>}>
-          <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
-            <StatBox label="Suprafata totala (ha)" value={sheet.totalArea} />
-            <StatBox label="Nr. parcele" value={sheet.parcelCount} />
+        <Card title={`Fisa Tehnologica consolidata pe cultura — ${sheet.crop?.name || "-"} (${sheet.year})`} actions={<Btn variant="secondary" onClick={exportSheet}>Exporta CSV</Btn>}>
+          <div style={{ background: C.bg, borderRadius: 8, padding: 14, marginBottom: 16, display: "flex", gap: 24, flexWrap: "wrap", fontSize: 14 }}>
+            <span><strong>Cultură:</strong> {sheet.crop?.name}</span>
+            <span><strong>An:</strong> {sheet.year}</span>
+            <span><strong>Suprafață totală:</strong> {sheet.totalArea} ha</span>
+            <span><strong>Nr. parcele:</strong> {sheet.parcelCount}</span>
           </div>
 
-          <h4 style={{ color: C.earth, marginTop: 20, marginBottom: 8 }}>Lucrari Mecanice</h4>
-          <Table headers={["Denumire", "Perioada", "Suprafata (ha)", "Utilaj"]} rows={sheet.mechanical.map((m) => [m.name, m.period, m.totalArea, m.equipment])} />
+          <h4 style={{ fontSize: 14, color: C.forest, fontWeight: 600, marginBottom: 8, textTransform: "uppercase" }}>Lucrari Mecanice</h4>
+          <Table headers={["Lucrare", "Perioada", "Utilaj", "Produse", "Cant./ha", "U.M."]} rows={sheet.mechanical.map((m) => [m.name, m.period, m.equipment, m.products || "-", m.qtyPerHa || "-", m.unit || "-"])} />
 
-          <h4 style={{ color: C.earth, marginTop: 20, marginBottom: 8 }}>Lucrari Manuale</h4>
-          <Table headers={["Denumire", "Perioada", "Suprafata (ha)"]} rows={sheet.manual.map((m) => [m.name, m.period, m.totalArea])} />
+          <h4 style={{ fontSize: 14, color: C.forest, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", marginTop: 20 }}>Lucrari Manuale</h4>
+          <Table headers={["Lucrare", "Perioada", "Utilaj", "Produse", "Cant./ha", "U.M."]} rows={sheet.manual.map((m) => [m.name, m.period, m.equipment || "-", m.products || "-", m.qtyPerHa || "-", m.unit || "-"])} />
 
-          <h4 style={{ color: C.earth, marginTop: 20, marginBottom: 8 }}>Input-uri (Materiale consumate)</h4>
-          <Table headers={["Produs", "Cantitate Totala", "U.M.", "Cant./ha", "Perioada"]} rows={sheet.inputs.map((inp) => [inp.products || inp.name, inp.totalQty, inp.unit, inp.qtyPerHa, inp.period])} />
+          <h4 style={{ fontSize: 14, color: C.forest, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", marginTop: 20 }}>Input-uri</h4>
+          <Table headers={["Lucrare", "Perioada", "Utilaj", "Produse", "Cant./ha", "U.M."]} rows={sheet.inputs.map((inp) => [inp.name, inp.period, inp.equipment || "-", inp.products || "-", inp.qtyPerHa || "-", inp.unit || "-"])} />
+
+          <h4 style={{ fontSize: 14, color: C.forest, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", marginTop: 20 }}>Materiale Consumate (din toate categoriile)</h4>
+          <Table headers={["Produs", "Lucrare", "Cantitate Totala", "U.M.", "Cant./ha", "Perioada"]} rows={(sheet.materials || []).map((m) => [m.product, m.workName || "-", m.totalQty, m.unit, m.qtyPerHa, m.period])} />
         </Card>
       )}
     </>
@@ -738,37 +750,52 @@ function TabFiseTehnice({ farmId, token, crops, seasons }) {
 }
 
 // ─────────────────────────────────────────────
-// TAB 5: RECOLTARE
+// TAB 5: RECOLTARE (stil prima versiune)
 // ─────────────────────────────────────────────
 function TabRecoltare({ farmId, token, seasons, crops, harvests, onRefresh }) {
-  const [subTab, setSubTab] = useState(0);
-  const [selPs, setSelPs] = useState("");
-  const [hDate, setHDate] = useState("");
-  const [hQty, setHQty] = useState("");
-  const [hHum, setHHum] = useState("");
-  const [hAviz, setHAviz] = useState("");
-  const [hDest, setHDest] = useState("");
+  const [selCropYear, setSelCropYear] = useState("");
+  const [harvestDate, setHarvestDate] = useState("");
+  const [totalQty, setTotalQty] = useState("");
+  const [humidity, setHumidity] = useState("");
+  const [destination, setDestination] = useState("");
+  const [invoiceStart, setInvoiceStart] = useState("");
   const [loading, setLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [success, setSuccess] = useState("");
 
-  // Proportional
-  const [propCrop, setPropCrop] = useState("");
-  const [propYear, setPropYear] = useState(new Date().getFullYear());
-  const [propQty, setPropQty] = useState("");
-  const [propDate, setPropDate] = useState("");
-  const [propHum, setPropHum] = useState("");
-  const [propDest, setPropDest] = useState("");
-  const [preview, setPreview] = useState(null);
+  const cropYearGroups = useMemo(() => {
+    const groups = {};
+    seasons.forEach((ps) => {
+      const key = `${ps.cropId}-${ps.year}`;
+      if (!groups[key]) groups[key] = { crop: ps.cultura, year: ps.year, parcels: [], totalArea: 0 };
+      groups[key].parcels.push(ps);
+      groups[key].totalArea += (ps.parcel?.areaHa || 0);
+    });
+    return groups;
+  }, [seasons]);
 
-  const addHarvest = async () => {
-    if (!selPs || !hDate || !hQty) return;
+  const createHarvest = async () => {
+    if (!selCropYear || !harvestDate || !totalQty) return;
+    const group = cropYearGroups[selCropYear];
+    if (!group) return;
     setLoading(true);
     try {
-      await api("/harvests", token, { method: "POST", body: { parcelSeasonId: Number(selPs), harvestDate: hDate, quantityKg: Number(hQty), humidity: Number(hHum) || null, avizNumber: hAviz, destination: hDest } });
+      await api("/harvests/proportional", token, {
+        method: "POST",
+        body: {
+          farmId,
+          cropId: group.crop.id,
+          year: group.year,
+          totalQuantityKg: Number(totalQty),
+          harvestDate,
+          humidity: Number(humidity) || null,
+          avizNumber: invoiceStart,
+          destination,
+        },
+      });
       onRefresh();
-      setHQty(""); setHHum(""); setHAviz("");
-      setSuccess("Recoltare inregistrata cu succes!");
+      setTotalQty(""); setHumidity(""); setDestination(""); setInvoiceStart("");
+      setSuccess("Recoltare înregistrată cu succes!");
       setTimeout(() => setSuccess(""), 3000);
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
@@ -779,125 +806,68 @@ function TabRecoltare({ farmId, token, seasons, crops, harvests, onRefresh }) {
     setDeleteTarget(null);
   };
 
-  const doPreview = async () => {
-    if (!propCrop || !propQty) return;
-    setLoading(true);
-    try {
-      const data = await api("/harvests/preview-proportional", token, { method: "POST", body: { farmId, cropId: Number(propCrop), year: Number(propYear), totalQuantityKg: Number(propQty) } });
-      setPreview(data);
-    } catch (e) { console.error(e); } finally { setLoading(false); }
-  };
-
-  const saveProportional = async () => {
-    if (!propCrop || !propQty || !propDate) return;
-    setLoading(true);
-    try {
-      await api("/harvests/proportional", token, { method: "POST", body: { farmId, cropId: Number(propCrop), year: Number(propYear), totalQuantityKg: Number(propQty), harvestDate: propDate, humidity: Number(propHum) || null, avizNumber: hAviz, destination: propDest } });
-      onRefresh();
-      setPreview(null);
-      setPropQty("");
-      setSuccess("Recoltari distribuite proportional cu succes!");
-      setTimeout(() => setSuccess(""), 3000);
-    } catch (e) { console.error(e); } finally { setLoading(false); }
-  };
-
-  const availableCrops = [...new Set(seasons.map((s) => JSON.stringify({ id: s.cropId, name: s.cultura?.name })))].map((s) => JSON.parse(s)).filter((c) => c.name);
-  const years = [...new Set(seasons.map((s) => s.year))].sort((a, b) => b - a);
-
-  // Jurnal recoltare
-  const totalQty = harvests.reduce((s, h) => s + h.quantityKg, 0);
-  const totalArea = harvests.reduce((s, h) => s + (h.sezon?.parcel?.areaHa || 0), 0);
+  const sessions = useMemo(() => {
+    const groups = {};
+    harvests.forEach((h) => {
+      const key = `${h.sezon?.cultura?.id}_${h.harvestDate}_${h.destination}`;
+      if (!groups[key]) groups[key] = { id: key, crop: h.sezon?.cultura, date: h.harvestDate, entries: [], totalQty: 0, totalArea: 0 };
+      groups[key].entries.push(h);
+      groups[key].totalQty += h.quantityKg;
+      groups[key].totalArea += (h.sezon?.parcel?.areaHa || 0);
+    });
+    return Object.values(groups).sort((a, b) => b.date.localeCompare(a.date));
+  }, [harvests]);
 
   return (
     <>
       {deleteTarget && <ConfirmDelete message="Sigur doriti sa stergeti aceasta recoltare?" onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} />}
       {success && <SuccessMsg>{success}</SuccessMsg>}
 
-      <div style={{ display: "flex", gap: 4, marginBottom: 16, background: C.bg, borderRadius: 8, padding: 3 }}>
-        {["Inregistrare individuala", "Calcul proportional", "Jurnal recoltare"].map((t, i) => (
-          <button key={i} onClick={() => setSubTab(i)} style={{ flex: 1, padding: "8px 12px", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13, fontWeight: subTab === i ? 600 : 400, background: subTab === i ? C.white : "transparent", color: subTab === i ? C.forest : C.textMuted }}>
-            {t}
-          </button>
-        ))}
-      </div>
+      <Card title="Înregistrare recoltare (calcul proporțional automat)">
+        <p style={{ fontSize: 13, color: C.textMuted, marginTop: 0, marginBottom: 16 }}>
+          Introdu cantitatea totală recoltată la nivel de cultură. Distribuția pe parcele se calculează automat:
+          <br /><strong style={{ color: C.forest }}>Cantitate parcelă = (Total kg ÷ Total ha cultură) × Suprafață parcelă</strong>
+        </p>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <Select label="Cultură / An" value={selCropYear} onChange={e => setSelCropYear(e.target.value)}
+            options={Object.entries(cropYearGroups).map(([key, g]) => ({
+              value: key, label: `${g.crop?.name} — ${g.year} (${g.totalArea.toFixed(2)} ha)`
+            }))} />
+          <Input label="Data recoltării" type="date" value={harvestDate} onChange={e => setHarvestDate(e.target.value)} style={{ width: 150 }} />
+          <Input label="Cantitate TOTALĂ (kg)" type="number" value={totalQty} onChange={e => setTotalQty(e.target.value)} placeholder="Ex: 71215" style={{ width: 150 }} />
+          <Input label="Umiditate (%)" type="number" value={humidity} onChange={e => setHumidity(e.target.value)} placeholder="Ex: 14" style={{ width: 100 }} />
+          <Input label="Destinație" value={destination} onChange={e => setDestination(e.target.value)} placeholder="Ex: Ameropa" style={{ width: 130 }} />
+          <Input label="Nr. aviz (start)" value={invoiceStart} onChange={e => setInvoiceStart(e.target.value)} placeholder="Ex: 21" style={{ width: 100 }} />
+          <Btn onClick={createHarvest} disabled={!selCropYear || !harvestDate || !totalQty || loading}>Înregistrează</Btn>
+        </div>
+      </Card>
 
-      {subTab === 0 && (
-        <>
-          <Card title="Adauga Recoltare pe Parcela">
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-              <Select label="Parcela-Sezon" value={selPs} onChange={(e) => setSelPs(e.target.value)} options={seasons.map((ps) => ({ value: ps.id, label: `B${ps.parcel?.block?.blockNumber}/P${ps.parcel?.parcelNumber} - ${ps.cultura?.name} (${ps.year})` }))} />
-              <Input label="Data recoltare" type="date" value={hDate} onChange={(e) => setHDate(e.target.value)} />
-              <Input label="Cantitate (kg)" type="number" value={hQty} onChange={(e) => setHQty(e.target.value)} style={{ width: 120 }} />
-              <Input label="Umiditate (%)" type="number" step="0.1" value={hHum} onChange={(e) => setHHum(e.target.value)} style={{ width: 100 }} />
-              <Input label="Nr. Aviz" value={hAviz} onChange={(e) => setHAviz(e.target.value)} style={{ width: 120 }} />
-              <Input label="Destinatie" value={hDest} onChange={(e) => setHDest(e.target.value)} placeholder="Ex: Ameropa" />
-              <Btn onClick={addHarvest} disabled={loading}>Adauga</Btn>
-            </div>
-          </Card>
-          <Card title="Recoltari inregistrate">
-            <Table
-              headers={["Data", "Parcela", "Cultura", "Cantitate (kg)", "Umiditate (%)", "Nr. Aviz", "Destinatie", "Actiuni"]}
-              rows={harvests.map((h) => [
-                h.harvestDate, `B${h.sezon?.parcel?.block?.blockNumber}/P${h.sezon?.parcel?.parcelNumber}`,
-                h.sezon?.cultura?.name, h.quantityKg, h.humidity || "-", h.avizNumber || "-", h.destination || "-",
-                <Btn variant="smallDanger" onClick={() => setDeleteTarget(h.id)}>Sterge</Btn>
-              ])}
-            />
-          </Card>
-        </>
-      )}
-
-      {subTab === 1 && (
-        <>
-          <Card title="Calcul Proportional (Recoltare Totala)">
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-              <Select label="Cultura" value={propCrop} onChange={(e) => setPropCrop(e.target.value)} options={availableCrops.map((c) => ({ value: c.id, label: c.name }))} />
-              <Select label="An" value={propYear} onChange={(e) => setPropYear(e.target.value)} options={years.map((y) => ({ value: y, label: y }))} />
-              <Input label="Cantitate totala (kg)" type="number" value={propQty} onChange={(e) => setPropQty(e.target.value)} />
-              <Input label="Data recoltare" type="date" value={propDate} onChange={(e) => setPropDate(e.target.value)} />
-              <Input label="Umiditate (%)" type="number" step="0.1" value={propHum} onChange={(e) => setPropHum(e.target.value)} style={{ width: 100 }} />
-              <Input label="Destinatie" value={propDest} onChange={(e) => setPropDest(e.target.value)} placeholder="Ex: Ameropa" />
-              <Btn variant="wheat" onClick={doPreview} disabled={loading}>Calculeaza si distribuie</Btn>
-            </div>
-          </Card>
-
-          {preview && (
-            <Card title="Previzualizare Distributie Proportionala" actions={<Btn onClick={saveProportional} disabled={loading || !propDate}>Salveaza toate recoltarile</Btn>}>
-              <p style={{ fontSize: 13, color: C.textMuted, marginBottom: 12 }}>Suprafata totala: {preview.totalArea} ha | Cantitate totala: {propQty} kg</p>
-              <Table
-                headers={["Bloc", "Parcela", "Suprafata (ha)", "Cantitate calculata (kg)", "% din total"]}
-                rows={preview.distributions.map((d) => [d.blockNumber, d.parcelNumber, d.areaHa, d.quantityKg, `${d.percentOfTotal}%`])}
-              />
-            </Card>
-          )}
-        </>
-      )}
-
-      {subTab === 2 && (
-        <Card title="Jurnal de Recoltare" actions={<Btn variant="secondary" onClick={() => exportCSV(["Nr.Crt", "Data", "Produs", "Sola (Nr Parcela)", "Suprafata (ha)", "Cantitate (kg)", "Nr. Aviz", "Umiditate (%)", "Destinatie"], harvests.map((h, i) => [i + 1, h.harvestDate, h.sezon?.cultura?.name, `B${h.sezon?.parcel?.block?.blockNumber}/P${h.sezon?.parcel?.parcelNumber}`, h.sezon?.parcel?.areaHa, h.quantityKg, h.avizNumber || "", h.humidity || "", h.destination || ""]), "jurnal_recoltare.csv")}>Exporta CSV</Btn>}>
-          <Table
-            headers={["Nr.Crt", "Data", "Produs", "Sola", "Suprafata (ha)", "Cantitate (kg)", "Nr. Aviz", "Umiditate (%)", "Destinatie"]}
-            rows={harvests.map((h, i) => [
-              i + 1, h.harvestDate, h.sezon?.cultura?.name,
-              `B${h.sezon?.parcel?.block?.blockNumber}/P${h.sezon?.parcel?.parcelNumber}`,
-              h.sezon?.parcel?.areaHa, h.quantityKg, h.avizNumber || "-", h.humidity || "-", h.destination || "-"
-            ])}
-          />
-          {harvests.length > 0 && (
-            <div style={{ marginTop: 16, padding: "12px 16px", background: C.bg, borderRadius: 8, display: "flex", gap: 24, fontSize: 13, fontWeight: 600 }}>
-              <span>Total suprafata: {Math.round(totalArea * 100) / 100} ha</span>
-              <span>Total cantitate: {Math.round(totalQty)} kg</span>
-              <span>Productie medie: {totalArea > 0 ? Math.round(totalQty / totalArea) : 0} kg/ha</span>
-            </div>
-          )}
+      {sessions.map(session => (
+        <Card key={session.id} title={`Jurnal recoltare — ${session.crop?.name} — ${session.date}`}
+          actions={<Btn variant="secondary" onClick={() => exportCSV(
+            ["Nr.crt", "Data", "Produs", "Sola", "Suprafață (ha)", "Cantitate (kg)", "Nr. Aviz", "Umiditate %", "Destinație"],
+            session.entries.map((e, i) => [i + 1, session.date, session.crop?.name, `B${e.sezon?.parcel?.block?.blockNumber}/P${e.sezon?.parcel?.parcelNumber}`, e.sezon?.parcel?.areaHa, e.quantityKg, e.avizNumber || "", e.humidity || "", e.destination]),
+            `jurnal_recoltare_${session.crop?.name}_${session.date}.csv`
+          )} style={{ fontSize: 12, padding: "4px 12px" }}>Exportă CSV</Btn>}>
+          <div style={{ background: C.bg, borderRadius: 8, padding: 12, marginBottom: 12, display: "flex", gap: 20, fontSize: 13, flexWrap: "wrap" }}>
+            <span><strong>Total cantitate:</strong> {session.totalQty.toLocaleString()} kg</span>
+            <span><strong>Total suprafață:</strong> {session.totalArea.toFixed(2)} ha</span>
+            <span><strong>Randament mediu:</strong> {session.totalArea > 0 ? (session.totalQty / session.totalArea).toFixed(0) : 0} kg/ha</span>
+          </div>
+          <Table headers={["Nr.", "Produs", "Sola", "Suprafață (ha)", "Cantitate (kg)", "Nr. Aviz", "Umiditate %", "Destinație", "Acțiuni"]}
+            rows={session.entries.map((e, i) => [
+              i + 1, session.crop?.name, `B${e.sezon?.parcel?.block?.blockNumber}/P${e.sezon?.parcel?.parcelNumber}`, e.sezon?.parcel?.areaHa, e.quantityKg.toLocaleString(), e.avizNumber || "—", e.humidity || "—", e.destination || "—",
+              <Btn variant="smallDanger" onClick={() => setDeleteTarget(e.id)}>Sterge</Btn>
+            ])} />
         </Card>
-      )}
+      ))}
     </>
   );
 }
 
+
 // ─────────────────────────────────────────────
-// TAB 6: RAPOARTE APIA
+// TAB 6: RAPOARTE APIA (stil prima versiune)
 // ─────────────────────────────────────────────
 function TabRapoarteApia({ farmId, token }) {
   const [year, setYear] = useState(new Date().getFullYear());
@@ -914,14 +884,14 @@ function TabRapoarteApia({ farmId, token }) {
 
   const exportReport = () => {
     if (!report) return;
-    const headers = ["Nr.Crt", "Judet", "Localitate", "Nr. Bloc Fizic", "Nr. Parcela", "Suprafata (ha)", "Cultura", "Cod Pachet"];
-    const rows = report.rows.map((r) => [r.nrCrt, r.judet, r.localitate, r.blocFizic, r.parcela, r.suprafata, r.cultura, r.codPachet]);
+    const headers = ["Nr.Crt", "Judet", "Localitate", "Nr. Bloc Fizic", "Nr. Parcela", "Suprafata (ha)", "Categorie", "Cultura", "An", "Sezon", "Interventie DR", "Cod Pachet"];
+    const rows = report.rows.map((r) => [r.nrCrt, r.judet, r.localitate, r.blocFizic, r.parcela, r.suprafata, r.landCategory, r.cultura, r.year, r.season, r.drIntervention, r.codPachet]);
     exportCSV(headers, rows, `raport_apia_${year}.csv`);
   };
 
   return (
     <>
-      <Card title="Generare Raport APIA (Cerere de Plata)">
+      <Card title="Generare Raport APIA (Cerere de Plată)">
         <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
           <Input label="An agricol" type="number" value={year} onChange={(e) => setYear(e.target.value)} style={{ width: 120 }} />
           <Btn onClick={generate} disabled={loading}>{loading ? "Se genereaza..." : "Genereaza Raport APIA"}</Btn>
@@ -930,21 +900,63 @@ function TabRapoarteApia({ farmId, token }) {
 
       {report && (
         <>
-          {report.warnings.length > 0 && (
-            <Warning>{report.warnings.length} parcele fara cultura in anul {year}: {report.warnings.map((w) => `B${w.blockNumber}/P${w.parcelNumber}`).join(", ")}</Warning>
-          )}
-
-          <Card title={`Raport APIA — ${year}`} actions={<Btn variant="secondary" onClick={exportReport}>Exporta CSV (format APIA)</Btn>}>
-            <div style={{ marginBottom: 16, padding: "12px 16px", background: C.bg, borderRadius: 8, fontSize: 13 }}>
-              <p style={{ margin: "0 0 4px" }}><strong>Producator:</strong> {report.farm.name}</p>
-              {report.farm.cui && <p style={{ margin: "0 0 4px" }}><strong>Cod fiscal:</strong> {report.farm.cui}</p>}
-              {report.farm.county && <p style={{ margin: "0 0 4px" }}><strong>Judet:</strong> {report.farm.county}</p>}
-              <p style={{ margin: 0 }}><strong>An agricol:</strong> {year}</p>
+          <h3 style={{ fontSize: 18, color: C.earth, marginBottom: 16, marginTop: 24 }}>1. Informații Fermă</h3>
+          <Card>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+              <div style={{ padding: "10px 14px", background: C.bg, borderRadius: 8, fontSize: 13 }}>
+                <div style={{ fontSize: 11, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.3px", marginBottom: 4 }}>Denumire exploatatie</div>
+                <div style={{ fontWeight: 600, color: C.earth }}>{report.farm.name}</div>
+              </div>
+              <div style={{ padding: "10px 14px", background: C.bg, borderRadius: 8, fontSize: 13 }}>
+                <div style={{ fontSize: 11, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.3px", marginBottom: 4 }}>CUI / Cod fiscal</div>
+                <div style={{ fontWeight: 600, color: C.earth }}>{report.farm.cui || "-"}</div>
+              </div>
+              <div style={{ padding: "10px 14px", background: C.bg, borderRadius: 8, fontSize: 13 }}>
+                <div style={{ fontSize: 11, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.3px", marginBottom: 4 }}>Judet</div>
+                <div style={{ fontWeight: 600, color: C.earth }}>{report.farm.county || "-"}</div>
+              </div>
+              <div style={{ padding: "10px 14px", background: C.bg, borderRadius: 8, fontSize: 13 }}>
+                <div style={{ fontSize: 11, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.3px", marginBottom: 4 }}>Localitate</div>
+                <div style={{ fontWeight: 600, color: C.earth }}>{report.farm.locality || "-"}</div>
+              </div>
+              <div style={{ padding: "10px 14px", background: C.bg, borderRadius: 8, fontSize: 13 }}>
+                <div style={{ fontSize: 11, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.3px", marginBottom: 4 }}>IBAN</div>
+                <div style={{ fontWeight: 600, color: C.earth }}>{report.farm.iban || "-"}</div>
+              </div>
+              <div style={{ padding: "10px 14px", background: C.bg, borderRadius: 8, fontSize: 13 }}>
+                <div style={{ fontSize: 11, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.3px", marginBottom: 4 }}>Banca</div>
+                <div style={{ fontWeight: 600, color: C.earth }}>{report.farm.bank || "-"}</div>
+              </div>
             </div>
+          </Card>
 
+          <h3 style={{ fontSize: 18, color: C.earth, marginTop: 32, marginBottom: 16 }}>2. GAEC 7 — Diversificarea Culturilor</h3>
+          <Card style={{ border: `2px solid ${report.gaec7.isCompliant ? C.success : C.danger}` }}>
+            <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
+              <StatBox label="Suprafata totala (ha)" value={report.gaec7.totalArea} color={C.forest} />
+              <StatBox label="Cultura principala (%)" value={`${report.gaec7.mainCropPct}%`} color={report.gaec7.mainCropPct > 75 && !report.gaec7.isExempt ? C.danger : C.success} />
+              <StatBox label="Nr. culturi (gen)" value={report.gaec7.crops.length} color={C.soil} />
+              <StatBox label="Status" value={report.gaec7.isExempt ? "Exceptat (<10 ha)" : report.gaec7.isCompliant ? "CONFORM" : "NECONFORM"} color={report.gaec7.isCompliant || report.gaec7.isExempt ? C.success : C.danger} />
+            </div>
+            {report.gaec7.isExempt && (
+              <div style={{ padding: "10px 14px", background: "#e8f5e9", borderRadius: 8, fontSize: 13, color: C.success, marginBottom: 12 }}>
+                Exploatatia este exceptata de la GAEC 7 (suprafata sub 10 ha).
+              </div>
+            )}
+            {!report.gaec7.isExempt && !report.gaec7.isCompliant && (
+              <Warning>Cultura principala ({report.gaec7.crops[0]?.name}) depaseste 75% din suprafata totala! ({report.gaec7.mainCropPct}%)</Warning>
+            )}
             <Table
-              headers={["Nr.Crt", "Judet", "Localitate", "Nr. Bloc Fizic", "Nr. Parcela", "Suprafata (ha)", "Cultura", "Cod Pachet"]}
-              rows={report.rows.map((r) => [r.nrCrt, r.judet, r.localitate, r.blocFizic, r.parcela, r.suprafata, r.cultura, r.codPachet])}
+              headers={["Cultura", "Gen botanic", "Suprafata (ha)", "Pondere (%)"]}
+              rows={report.gaec7.crops.map((c) => [c.name, c.genus, c.area, `${c.percentage}%`])}
+            />
+          </Card>
+
+          <h3 style={{ fontSize: 18, color: C.earth, marginTop: 32, marginBottom: 16 }}>3. Declarație de suprafață — Format APIA</h3>
+          <Card actions={<Btn variant="secondary" onClick={exportReport}>Exporta CSV (format APIA)</Btn>}>
+            <Table
+              headers={["Nr.Crt", "Judet", "Localitate", "Nr. Bloc Fizic", "Nr. Parcela", "Suprafata (ha)", "Categorie", "Cultura", "An", "Sezon", "Interventie DR", "Cod Pachet"]}
+              rows={report.rows.map((r) => [r.nrCrt, r.judet, r.localitate, r.blocFizic, r.parcela, r.suprafata, r.landCategory, r.cultura, r.year, r.season, r.drIntervention || "-", r.codPachet])}
             />
 
             <div style={{ marginTop: 16, padding: "12px 16px", background: C.bg, borderRadius: 8, display: "flex", gap: 24, fontSize: 13, fontWeight: 600 }}>
@@ -960,29 +972,42 @@ function TabRapoarteApia({ farmId, token }) {
 }
 
 // ─────────────────────────────────────────────
-// TAB 7: MOTORINĂ
+// TAB 7: MOTORINĂ (stil prima versiune)
 // ─────────────────────────────────────────────
 function TabMotorina({ farmId, token, seasons, fuelEntries, onRefresh }) {
+  const [type, setType] = useState("ACHIZITIE");
   const [date, setDate] = useState("");
   const [liters, setLiters] = useState("");
   const [price, setPrice] = useState("");
-  const [equip, setEquip] = useState("");
-  const [workDesc, setWorkDesc] = useState("");
   const [invoice, setInvoice] = useState("");
   const [supplier, setSupplier] = useState("");
+  const [equip, setEquip] = useState("");
+  const [workDesc, setWorkDesc] = useState("");
   const [selPs, setSelPs] = useState("");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  const totalPurchased = fuelEntries.filter(e => e.type === "ACHIZITIE").reduce((s, e) => s + e.liters, 0);
+  const totalConsumed = fuelEntries.filter(e => e.type === "CONSUM").reduce((s, e) => s + e.liters, 0);
+  const stock = totalPurchased - totalConsumed;
+
   const addEntry = async () => {
     if (!date || !liters) return;
     setLoading(true);
     try {
-      await api("/fuel", token, { method: "POST", body: { farmId, parcelSeasonId: selPs ? Number(selPs) : null, date, liters: Number(liters), pricePerLiter: Number(price) || null, equipment: equip, workDescription: workDesc, invoiceNumber: invoice, supplier, notes } });
+      const body = {
+        farmId, type, date, liters: Number(liters), notes,
+        pricePerLiter: type === "ACHIZITIE" ? Number(price) || null : null,
+        invoiceNumber: type === "ACHIZITIE" ? invoice : null,
+        supplier: type === "ACHIZITIE" ? supplier : null,
+        equipment: type === "CONSUM" ? equip : null,
+        workDescription: type === "CONSUM" ? workDesc : null,
+        parcelSeasonId: type === "CONSUM" && selPs ? Number(selPs) : null
+      };
+      await api("/fuel", token, { method: "POST", body });
       onRefresh();
-      setLiters(""); setPrice(""); setEquip(""); setWorkDesc(""); setInvoice(""); setNotes("");
-      setDate("");
+      setLiters(""); setPrice(""); setInvoice(""); setSupplier(""); setEquip(""); setWorkDesc(""); setNotes(""); setDate(""); setSelPs("");
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
@@ -992,45 +1017,54 @@ function TabMotorina({ farmId, token, seasons, fuelEntries, onRefresh }) {
     setDeleteTarget(null);
   };
 
-  const totalLiters = fuelEntries.reduce((s, e) => s + e.liters, 0);
-  const totalCost = fuelEntries.reduce((s, e) => s + (e.liters * (e.pricePerLiter || 0)), 0);
-
   return (
     <>
-      {deleteTarget && <ConfirmDelete message="Sigur doriti sa stergeti aceasta inregistrare de motorina?" onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} />}
+      {deleteTarget && <ConfirmDelete message="Sigur doriți să ștergeți această înregistrare?" onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} />}
 
-      <Card title="Inregistrare Consum Motorina">
+      <div style={{ display: "flex", gap: 16, marginBottom: 20 }}>
+        <StatBox label="Total Achiziționată (L)" value={totalPurchased.toLocaleString()} color={C.forest} />
+        <StatBox label="Total Consumată (L)" value={totalConsumed.toLocaleString()} color={C.warn} />
+        <StatBox label="Stoc Actual (L)" value={stock.toLocaleString()} color={stock < 0 ? C.danger : C.forestLight} />
+      </div>
+
+      <Card title="Adaugă Înregistrare Motorină">
+        <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+          <Btn variant={type === "ACHIZITIE" ? "primary" : "secondary"} onClick={() => setType("ACHIZITIE")}>Achiziție</Btn>
+          <Btn variant={type === "CONSUM" ? "primary" : "secondary"} onClick={() => setType("CONSUM")}>Consum</Btn>
+        </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <Input label="Data" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          <Input label="Litri" type="number" step="0.1" value={liters} onChange={(e) => setLiters(e.target.value)} style={{ width: 90 }} />
-          <Input label="Pret/litru (RON)" type="number" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} style={{ width: 110 }} />
-          <Input label="Utilaj" value={equip} onChange={(e) => setEquip(e.target.value)} placeholder="Ex: NH 5.95" />
-          <Input label="Lucrare" value={workDesc} onChange={(e) => setWorkDesc(e.target.value)} placeholder="Ex: Arat" />
-          <Input label="Nr. Factura" value={invoice} onChange={(e) => setInvoice(e.target.value)} style={{ width: 120 }} />
-          <Input label="Furnizor" value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="Ex: Petrom" />
-          <Select label="Parcela-Sezon (optional)" value={selPs} onChange={(e) => setSelPs(e.target.value)} options={seasons.map((ps) => ({ value: ps.id, label: `B${ps.parcel?.block?.blockNumber}/P${ps.parcel?.parcelNumber} - ${ps.cultura?.name} (${ps.year})` }))} />
-          <Input label="Observatii" value={notes} onChange={(e) => setNotes(e.target.value)} />
-          <Btn onClick={addEntry} disabled={loading}>Adauga</Btn>
+          <Input label="Data" type="date" value={date} onChange={e => setDate(e.target.value)} style={{ width: 150 }} />
+          <Input label="Litri" type="number" value={liters} onChange={e => setLiters(e.target.value)} style={{ width: 100 }} />
+          {type === "ACHIZITIE" ? (
+            <>
+              <Input label="Preț/litru" type="number" value={price} onChange={e => setPrice(e.target.value)} style={{ width: 100 }} />
+              <Input label="Nr. Factură" value={invoice} onChange={e => setInvoice(e.target.value)} style={{ width: 120 }} />
+              <Input label="Furnizor" value={supplier} onChange={e => setSupplier(e.target.value)} placeholder="Ex: Petrom" style={{ width: 150 }} />
+            </>
+          ) : (
+            <>
+              <Input label="Utilaj" value={equip} onChange={e => setEquip(e.target.value)} placeholder="Ex: NH 5.95" style={{ width: 150 }} />
+              <Input label="Lucrare" value={workDesc} onChange={e => setWorkDesc(e.target.value)} placeholder="Ex: Arat" style={{ width: 150 }} />
+              <Select label="Parcelă" value={selPs} onChange={e => setSelPs(e.target.value)}
+                options={seasons.map(ps => ({ value: ps.id, label: `B${ps.parcel?.block?.blockNumber}/P${ps.parcel?.parcelNumber} (${ps.cultura?.name})` }))} />
+            </>
+          )}
+          <Input label="Note" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Opțional" />
+          <Btn onClick={addEntry} disabled={!date || !liters || loading}>Adaugă</Btn>
         </div>
       </Card>
 
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
-        <StatBox label="Total litri" value={Math.round(totalLiters * 10) / 10} color={C.warn} />
-        <StatBox label="Cost total (RON)" value={Math.round(totalCost * 100) / 100} color={C.danger} />
-        <StatBox label="Nr. alimentari" value={fuelEntries.length} color={C.soil} />
-      </div>
-
-      <Card title="Registru Consum Motorina" actions={<Btn variant="secondary" onClick={() => exportCSV(["Data", "Litri", "Pret/L", "Cost Total", "Utilaj", "Lucrare", "Nr. Factura", "Furnizor", "Parcela", "Observatii"], fuelEntries.map((e) => [e.date, e.liters, e.pricePerLiter || "", Math.round((e.liters * (e.pricePerLiter || 0)) * 100) / 100, e.equipment || "", e.workDescription || "", e.invoiceNumber || "", e.supplier || "", e.sezon ? `B${e.sezon?.parcel?.block?.blockNumber}/P${e.sezon?.parcel?.parcelNumber}` : "-", e.notes || ""]), "motorina.csv")}>Exporta CSV</Btn>}>
-        <Table
-          headers={["Data", "Litri", "Pret/L", "Cost (RON)", "Utilaj", "Lucrare", "Nr. Factura", "Furnizor", "Parcela", "Actiuni"]}
-          rows={fuelEntries.map((e) => [
-            e.date, e.liters, e.pricePerLiter || "-",
-            Math.round((e.liters * (e.pricePerLiter || 0)) * 100) / 100,
-            e.equipment || "-", e.workDescription || "-", e.invoiceNumber || "-", e.supplier || "-",
-            e.sezon ? `B${e.sezon?.parcel?.block?.blockNumber}/P${e.sezon?.parcel?.parcelNumber}` : "-",
-            <Btn variant="smallDanger" onClick={() => setDeleteTarget(e.id)}>Sterge</Btn>
-          ])}
-        />
+      <Card title="Jurnal Gestiune Motorină" actions={<Btn variant="secondary" onClick={() => exportCSV(["Tip", "Data", "Litri", "Preț/L", "Factură/Utilaj", "Furnizor/Lucrare", "Note"], fuelEntries.map(e => [e.type, e.date, e.liters, e.pricePerLiter || "", e.invoiceNumber || e.equipment || "", e.supplier || e.workDescription || "", e.notes || ""]), "jurnal_motorina.csv")}>Exportă CSV</Btn>}>
+        <Table headers={["Tip", "Data", "Litri", "Detalii", "Note", "Acțiuni"]}
+          rows={fuelEntries.map(e => [
+            <span style={{ color: e.type === "ACHIZITIE" ? C.forest : C.warn, fontWeight: 600, textTransform: "capitalize" }}>{e.type.toLowerCase()}</span>,
+            e.date, e.liters.toLocaleString(),
+            e.type === "ACHIZITIE"
+              ? `${e.supplier || ""} (Fact. ${e.invoiceNumber || ""})`
+              : `${e.equipment || ""} — ${e.workDescription || ""}`,
+            e.notes || "—",
+            <Btn variant="smallDanger" onClick={() => setDeleteTarget(e.id)}>Șterge</Btn>
+          ])} />
       </Card>
     </>
   );

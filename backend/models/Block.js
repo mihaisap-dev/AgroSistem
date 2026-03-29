@@ -8,9 +8,8 @@ const Block = sequelize.define('Block', {
     autoIncrement: true,
   },
   blockNumber: {
-    type: DataTypes.STRING, // Modificat in STRING conform promptului (ex: "185")
+    type: DataTypes.STRING,
     allowNull: false,
-    unique: true,
   },
   name: {
     type: DataTypes.STRING,
@@ -18,7 +17,7 @@ const Block = sequelize.define('Block', {
   },
   locality: {
     type: DataTypes.STRING,
-    allowNull: false,
+    allowNull: true,
   },
   county: {
     type: DataTypes.STRING,
