@@ -45,7 +45,7 @@ Aplicația este structurată în 8 secțiuni (tab-uri) principale:
 
 ---
 
-## 🛠️ Tehnologii Folosite (Tech Stack)
+##  Tehnologii Folosite (Tech Stack)
 
 ### Frontend
 *   **React.js**: Interfață Single Page Application (SPA).
