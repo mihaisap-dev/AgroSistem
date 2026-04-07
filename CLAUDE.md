@@ -11,7 +11,7 @@ AgroSistem is a full-stack agricultural management and APIA reporting applicatio
 ## Tech Stack
 
 - **Backend**: Node.js + Express 5 + Sequelize ORM + PostgreSQL
-- **Frontend**: React 18 (single-file SPA in `frontend/src/App.js` — ~1195 lines, all inline styles)
+- **Frontend**: React 18 (single-file SPA in `frontend/src/App.js` — ~1525 lines, all inline styles) + xlsx (SheetJS) for Excel export
 - **Auth**: JWT (stateless, Bearer token in Authorization header)
 - **Build**: react-scripts (CRA)
 
@@ -49,8 +49,9 @@ There are no tests configured — `npm test` in backend exits with error by desi
 
 ### Frontend (`frontend/src/`)
 
-- **Single component**: `App.js` contains everything — UI components (Card, Btn, Input, Select, Table, ParcelMap, etc.), state management, API calls, and all 8 tabs
-- **Tabs**: Dashboard, Terenuri (land), Culturi (crops), Lucrări (works), Fișe Tehnice (tech sheets), Recoltare (harvest), Rapoarte APIA (reports), Motorină (fuel)
+- **Single component**: `App.js` contains everything — UI components (Card, Btn, Input, Select, Table, ParcelMap, etc.), state management, API calls, and all 10 tabs
+- **Tabs**: Dashboard, Terenuri (land), Culturi (crops), Lucrări (works), Fișe Tehnice (tech sheets), Recoltare (harvest), Rapoarte APIA (reports), Reg. Fermier (Form 013), Reg. Exploatație (Form 001), Motorină (fuel)
+- **Excel export**: `exportExcel()` and `exportExcelMultiHeader()` helpers using SheetJS (xlsx) with merged header cells
 - **State**: React useState/useCallback/useMemo, localStorage for token and user persistence (`agrosistem_user`, `agrosistem_token`)
 - **Styling**: All CSS via inline `style` props using a color palette object `C`
 
@@ -60,10 +61,18 @@ There are no tests configured — `npm test` in backend exits with error by desi
 - **GAEC 7 verification**: Validates crop diversity rules (main crop ≤75% for farms >10 ha)
 - **Harvest distribution**: Proportionally distributes harvest sessions across parcels by area
 - **APIA reports**: Generates compliance declarations with crop diversity analysis
+- **Registrul Fermierului (Form 013)**: Per-parcel detail register — fertilization, treatment, seeding, maintenance, harvest, production KG/HA
+- **Registrul Exploatației (Form 001)**: Per-parcel crop rotation register — primary, secondary, successive, and winter crops with work periods
 
 ## API Pattern
 
 All API calls from frontend use a helper `api(url, options)` that prepends the base URL and attaches the JWT token. Backend endpoints follow REST conventions under `/api/{resource}`.
+
+### Report Endpoints
+
+- `GET /api/reports/apia/:farmId/:year` — APIA declaration with GAEC 7 compliance
+- `GET /api/reports/registru-fermier/:farmId/:year` — Form 013 (Registrul Fermierului)
+- `GET /api/reports/registru-exploatatie/:farmId/:year` — Form 001 (Registrul Exploatației)
 
 ## Environment Variables
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import * as XLSX from "xlsx";
 
 // ─────────────────────────────────────────────
 // CONFIGURARE API
@@ -68,6 +69,39 @@ function exportCSV(headers, rows, filename) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// ─────────────────────────────────────────────
+// EXPORT EXCEL (XLSX)
+// ─────────────────────────────────────────────
+function exportExcel(headers, rows, filename, sheetName = "Date") {
+  const data = [headers, ...rows];
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  // Auto-width columns
+  ws["!cols"] = headers.map((h, i) => {
+    let max = String(h).length;
+    rows.forEach((r) => { const len = String(r[i] == null ? "" : r[i]).length; if (len > max) max = len; });
+    return { wch: Math.min(max + 2, 40) };
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  XLSX.writeFile(wb, filename);
+}
+
+function exportExcelMultiHeader(headerRows, dataRows, filename, sheetName = "Date", merges = []) {
+  const data = [...headerRows, ...dataRows];
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  if (merges.length > 0) ws["!merges"] = merges;
+  // Auto-width based on last header row and data
+  const lastHeader = headerRows[headerRows.length - 1] || [];
+  ws["!cols"] = lastHeader.map((h, i) => {
+    let max = String(h || "").length;
+    dataRows.forEach((r) => { const len = String(r[i] == null ? "" : r[i]).length; if (len > max) max = len; });
+    return { wch: Math.min(max + 2, 40) };
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  XLSX.writeFile(wb, filename);
 }
 
 // ─────────────────────────────────────────────
@@ -279,7 +313,7 @@ function AuthScreen({ onLogin }) {
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: `linear-gradient(160deg, ${C.earth} 0%, ${C.forest} 50%, ${C.forestLight} 100%)` }}>
       <div style={{ background: C.white, borderRadius: 16, padding: 40, width: 420, maxWidth: "90vw", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
         <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <div style={{ width: 56, height: 56, borderRadius: 14, background: `linear-gradient(135deg, ${C.wheat}, ${C.wheatLight})`, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 26, fontWeight: 700, color: C.earth, marginBottom: 12 }}>A</div>
+          <img src="/tractor-icon.jpg" alt="AgroSistem" style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover", marginBottom: 12 }} />
           <h1 style={{ margin: 0, fontFamily: "'Playfair Display', serif", fontSize: 28, color: C.earth }}>AgroSistem</h1>
           <p style={{ margin: "8px 0 0", color: C.textMuted, fontSize: 14 }}>Management agricol & APIA</p>
         </div>
@@ -503,7 +537,7 @@ function TabTerenuri({ farmId, token, blocks, seasons, onRefresh }) {
         />
       </Card>
 
-      <Card title="Registru Parcele" actions={<Btn variant="secondary" onClick={() => exportCSV(["Bloc Fizic", "Nr Parcela", "Suprafata (ha)", "Categorie", "Localitate"], allParcels.map((p) => [p.blockNumber, p.parcelNumber, p.areaHa, p.landCategory, p.locality]), "parcele.csv")}>Exporta CSV</Btn>}>
+      <Card title="Registru Parcele" actions={<Btn variant="secondary" onClick={() => exportExcel(["Bloc Fizic", "Nr Parcela", "Suprafata (ha)", "Categorie", "Localitate"], allParcels.map((p) => [p.blockNumber, p.parcelNumber, p.areaHa, p.landCategory, p.locality]), "parcele.xlsx", "Parcele")}>Exporta Excel</Btn>}>
         <Table
           headers={["Bloc Fizic", "Parcela", "Suprafata (ha)", "Categorie", "Localitate", "Actiuni"]}
           rows={allParcels.map((p) => [
@@ -569,7 +603,7 @@ function TabCulturi({ token, blocks, crops, seasons, onRefresh }) {
         </div>
         {selParcel && selCrop && checkRotation(selParcel, selCrop, year) && <div style={{ marginTop: 12, color: C.danger, fontSize: 13, fontWeight: 600 }}>Aceeasi cultura a fost pe aceasta parcela anul trecut!</div>}
       </Card>
-      <Card title="Istoric Culturi" actions={<Btn variant="secondary" onClick={() => exportCSV(["An", "Sezon", "Bloc Fizic", "Nr. Parcela", "Suprafata (ha)", "Cultura", "Rotatie"], seasons.map((s) => [s.year, s.season, s.parcel?.block?.blockNumber, s.parcel?.parcelNumber, s.parcel?.areaHa, s.cultura?.name, s.rotationWarning ? "Nerespectata" : "OK"]), "istoric_culturi.csv")}>Exporta CSV</Btn>}>
+      <Card title="Istoric Culturi" actions={<Btn variant="secondary" onClick={() => exportExcel(["An", "Sezon", "Bloc Fizic", "Nr. Parcela", "Suprafata (ha)", "Cultura", "Rotatie"], seasons.map((s) => [s.year, s.season, s.parcel?.block?.blockNumber, s.parcel?.parcelNumber, s.parcel?.areaHa, s.cultura?.name, s.rotationWarning ? "Nerespectata" : "OK"]), "istoric_culturi.xlsx", "Istoric Culturi")}>Exporta Excel</Btn>}>
         <Table
           headers={["An", "Sezon", "Bloc Fizic", "Nr. Parcela", "Suprafata (ha)", "Cultura", "Rotatie", "Actiuni"]}
           rows={seasons.map((s) => [
@@ -645,7 +679,7 @@ function TabLucrari({ token, seasons, workTypes, works, onRefresh }) {
         <div style={{ display: "flex", gap: 8 }}>
           <Select value={filterCrop} onChange={(e) => setFilterCrop(e.target.value)} options={uniqueCrops.map((c) => ({ value: c, label: c }))} style={{ fontSize: 12, padding: "4px 8px" }} />
           <Select value={filterCat} onChange={(e) => setFilterCat(e.target.value)} options={uniqueCats.map((c) => ({ value: c, label: c }))} style={{ fontSize: 12, padding: "4px 8px" }} />
-          <Btn variant="secondary" onClick={() => exportCSV(["Categorie", "Lucrare", "Perioada", "Cultură", "Suprafață (ha)", "Parcelă", "Utilaj", "Produse", "Cant./ha", "U.M."], filtered.map((w) => [w.tip?.category, w.tip?.name, w.period, w.sezon?.cultura?.name, w.sezon?.parcel?.areaHa, `B${w.sezon?.parcel?.block?.blockNumber}/P${w.sezon?.parcel?.parcelNumber}`, w.equipment, w.products, w.qtyPerHa, w.unit]), "lucrari.csv")}>Exporta CSV</Btn>
+          <Btn variant="secondary" onClick={() => exportExcel(["Categorie", "Lucrare", "Perioada", "Cultură", "Suprafață (ha)", "Parcelă", "Utilaj", "Produse", "Cant./ha", "U.M."], filtered.map((w) => [w.tip?.category, w.tip?.name, w.period, w.sezon?.cultura?.name, w.sezon?.parcel?.areaHa, `B${w.sezon?.parcel?.block?.blockNumber}/P${w.sezon?.parcel?.parcelNumber}`, w.equipment, w.products, w.qtyPerHa, w.unit]), "lucrari.xlsx", "Lucrari")}>Exporta Excel</Btn>
         </div>
       }>
         <Table
@@ -710,7 +744,11 @@ function TabFiseTehnice({ farmId, token, crops, seasons }) {
     rows.push(["MATERIALE CONSUMATE (DIN TOATE CATEGORIILE)"]);
     rows.push(["Produs", "Lucrare", "Cantitate Totala", "U.M.", "Cant./ha", "Perioada"]);
     (sheet.materials || []).forEach((m) => rows.push([m.product, m.workName || "", m.totalQty, m.unit, m.qtyPerHa, m.period]));
-    exportCSV([], rows, `fisa_tehnologica_${sheet.crop?.name}_${sheet.year}.csv`);
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = Array(6).fill({ wch: 20 });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Fisa Tehnologica");
+    XLSX.writeFile(wb, `fisa_tehnologica_${sheet.crop?.name}_${sheet.year}.xlsx`);
   };
 
   return (
@@ -724,7 +762,7 @@ function TabFiseTehnice({ farmId, token, crops, seasons }) {
       </Card>
 
       {sheet && (
-        <Card title={`Fisa Tehnologica consolidata pe cultura — ${sheet.crop?.name || "-"} (${sheet.year})`} actions={<Btn variant="secondary" onClick={exportSheet}>Exporta CSV</Btn>}>
+        <Card title={`Fisa Tehnologica consolidata pe cultura — ${sheet.crop?.name || "-"} (${sheet.year})`} actions={<Btn variant="secondary" onClick={exportSheet}>Exporta Excel</Btn>}>
           <div style={{ background: C.bg, borderRadius: 8, padding: 14, marginBottom: 16, display: "flex", gap: 24, flexWrap: "wrap", fontSize: 14 }}>
             <span><strong>Cultură:</strong> {sheet.crop?.name}</span>
             <span><strong>An:</strong> {sheet.year}</span>
@@ -844,11 +882,11 @@ function TabRecoltare({ farmId, token, seasons, crops, harvests, onRefresh }) {
 
       {sessions.map(session => (
         <Card key={session.id} title={`Jurnal recoltare — ${session.crop?.name} — ${session.date}`}
-          actions={<Btn variant="secondary" onClick={() => exportCSV(
+          actions={<Btn variant="secondary" onClick={() => exportExcel(
             ["Nr.crt", "Data", "Produs", "Sola", "Suprafață (ha)", "Cantitate (kg)", "Nr. Aviz", "Umiditate %", "Destinație"],
             session.entries.map((e, i) => [i + 1, session.date, session.crop?.name, `B${e.sezon?.parcel?.block?.blockNumber}/P${e.sezon?.parcel?.parcelNumber}`, e.sezon?.parcel?.areaHa, e.quantityKg, e.avizNumber || "", e.humidity || "", e.destination]),
-            `jurnal_recoltare_${session.crop?.name}_${session.date}.csv`
-          )} style={{ fontSize: 12, padding: "4px 12px" }}>Exportă CSV</Btn>}>
+            `jurnal_recoltare_${session.crop?.name}_${session.date}.xlsx`, "Jurnal Recoltare"
+          )} style={{ fontSize: 12, padding: "4px 12px" }}>Exportă Excel</Btn>}>
           <div style={{ background: C.bg, borderRadius: 8, padding: 12, marginBottom: 12, display: "flex", gap: 20, fontSize: 13, flexWrap: "wrap" }}>
             <span><strong>Total cantitate:</strong> {session.totalQty.toLocaleString()} kg</span>
             <span><strong>Total suprafață:</strong> {session.totalArea.toFixed(2)} ha</span>
@@ -886,7 +924,7 @@ function TabRapoarteApia({ farmId, token }) {
     if (!report) return;
     const headers = ["Nr.Crt", "Judet", "Localitate", "Nr. Bloc Fizic", "Nr. Parcela", "Suprafata (ha)", "Categorie", "Cultura", "An", "Sezon", "Interventie DR", "Cod Pachet"];
     const rows = report.rows.map((r) => [r.nrCrt, r.judet, r.localitate, r.blocFizic, r.parcela, r.suprafata, r.landCategory, r.cultura, r.year, r.season, r.drIntervention, r.codPachet]);
-    exportCSV(headers, rows, `raport_apia_${year}.csv`);
+    exportExcel(headers, rows, `raport_apia_${year}.xlsx`, "Raport APIA");
   };
 
   return (
@@ -953,7 +991,7 @@ function TabRapoarteApia({ farmId, token }) {
           </Card>
 
           <h3 style={{ fontSize: 18, color: C.earth, marginTop: 32, marginBottom: 16 }}>3. Declarație de suprafață — Format APIA</h3>
-          <Card actions={<Btn variant="secondary" onClick={exportReport}>Exporta CSV (format APIA)</Btn>}>
+          <Card actions={<Btn variant="secondary" onClick={exportReport}>Exporta Excel (format APIA)</Btn>}>
             <Table
               headers={["Nr.Crt", "Judet", "Localitate", "Nr. Bloc Fizic", "Nr. Parcela", "Suprafata (ha)", "Categorie", "Cultura", "An", "Sezon", "Interventie DR", "Cod Pachet"]}
               rows={report.rows.map((r) => [r.nrCrt, r.judet, r.localitate, r.blocFizic, r.parcela, r.suprafata, r.landCategory, r.cultura, r.year, r.season, r.drIntervention || "-", r.codPachet])}
@@ -972,7 +1010,300 @@ function TabRapoarteApia({ farmId, token }) {
 }
 
 // ─────────────────────────────────────────────
-// TAB 7: MOTORINĂ (stil prima versiune)
+// TAB 7: REGISTRUL FERMIERULUI (Form 013 APIA)
+// ─────────────────────────────────────────────
+function TabRegistruFermier({ farmId, token }) {
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const generate = async () => {
+    setLoading(true);
+    try {
+      const res = await api(`/reports/registru-fermier/${farmId}/${year}`, token);
+      setData(res);
+    } catch (e) { console.error(e); } finally { setLoading(false); }
+  };
+
+  const doExport = () => {
+    if (!data) return;
+    const headerRow1 = [
+      "Parcela", "BF", "HA", "Cultura", "Supr. Teren", "Arat", "Preg. Teren",
+      "Fertilizat", "", "",
+      "Tratament", "", "",
+      "Semănat", "", "",
+      "Lucrări de Întreținere", "Recoltat", "Producție KG/HA"
+    ];
+    const headerRow2 = [
+      "", "", "", "", "", "", "",
+      "Data", "Îngrășământ", "Cantitate",
+      "Data", "Substanță", "Doză",
+      "Data", "Soi, Hibrid", "Cant/HA",
+      "", "", ""
+    ];
+    const merges = [
+      { s: { r: 0, c: 7 }, e: { r: 0, c: 9 } },   // Fertilizat
+      { s: { r: 0, c: 10 }, e: { r: 0, c: 12 } },  // Tratament
+      { s: { r: 0, c: 13 }, e: { r: 0, c: 15 } },  // Semănat
+      // Vertical merges for single-row headers
+      { s: { r: 0, c: 0 }, e: { r: 1, c: 0 } },
+      { s: { r: 0, c: 1 }, e: { r: 1, c: 1 } },
+      { s: { r: 0, c: 2 }, e: { r: 1, c: 2 } },
+      { s: { r: 0, c: 3 }, e: { r: 1, c: 3 } },
+      { s: { r: 0, c: 4 }, e: { r: 1, c: 4 } },
+      { s: { r: 0, c: 5 }, e: { r: 1, c: 5 } },
+      { s: { r: 0, c: 6 }, e: { r: 1, c: 6 } },
+      { s: { r: 0, c: 16 }, e: { r: 1, c: 16 } },
+      { s: { r: 0, c: 17 }, e: { r: 1, c: 17 } },
+      { s: { r: 0, c: 18 }, e: { r: 1, c: 18 } },
+    ];
+    const rows = data.rows.map((r) => [
+      r.parcela, r.bf, r.ha, r.cultura, r.suprTeren, r.arat, r.pregTeren,
+      r.fertilizatData, r.fertilizatIngrasamant, r.fertilizatCantitate,
+      r.tratamentData, r.tratamentSubstanta, r.tratamentDoza,
+      r.semanatData, r.semanatSoiHibrid, r.semanatCantHa,
+      r.lucrariIntretinere, r.recoltat, r.productieKgHa
+    ]);
+    exportExcelMultiHeader([headerRow1, headerRow2], rows, `registru_fermier_${year}.xlsx`, "Registrul Fermierului", merges);
+  };
+
+  const thStyle = { padding: "8px 6px", fontSize: 11, fontWeight: 600, color: C.forest, background: C.sky, borderBottom: `2px solid ${C.forest}`, textAlign: "center", whiteSpace: "nowrap" };
+  const tdStyle = { padding: "6px", fontSize: 12, borderBottom: `1px solid ${C.border}`, textAlign: "center" };
+  const thGroup = { ...thStyle, background: C.forestLight, color: C.white, letterSpacing: "0.5px" };
+
+  return (
+    <>
+      <Card title="Registrul Fermierului — Formular 013 APIA">
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
+          <Input label="An agricol" type="number" value={year} onChange={(e) => setYear(e.target.value)} style={{ width: 120 }} />
+          <Btn onClick={generate} disabled={loading}>{loading ? "Se genereaza..." : "Genereaza Registrul"}</Btn>
+        </div>
+      </Card>
+
+      {data && (
+        <>
+          <Card style={{ marginTop: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div style={{ fontSize: 13, color: C.textMuted }}>
+                <strong>{data.farm.name}</strong> — {data.farm.sediu} — ID Fermier: {data.farm.cui || "-"}
+              </div>
+              <Btn variant="secondary" onClick={doExport}>Exporta Excel (.xlsx)</Btn>
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1400 }}>
+                <thead>
+                  <tr>
+                    <th rowSpan={2} style={thStyle}>Parcela</th>
+                    <th rowSpan={2} style={thStyle}>BF</th>
+                    <th rowSpan={2} style={thStyle}>HA</th>
+                    <th rowSpan={2} style={thStyle}>Cultura</th>
+                    <th rowSpan={2} style={thStyle}>Supr. Teren</th>
+                    <th rowSpan={2} style={thStyle}>Arat</th>
+                    <th rowSpan={2} style={thStyle}>Preg. Teren</th>
+                    <th colSpan={3} style={thGroup}>Fertilizat</th>
+                    <th colSpan={3} style={thGroup}>Tratament</th>
+                    <th colSpan={3} style={thGroup}>Semănat</th>
+                    <th rowSpan={2} style={thStyle}>Lucrări de Întreținere</th>
+                    <th rowSpan={2} style={thStyle}>Recoltat</th>
+                    <th rowSpan={2} style={thStyle}>Producție KG/HA</th>
+                  </tr>
+                  <tr>
+                    <th style={thStyle}>Data</th>
+                    <th style={thStyle}>Îngrășământ</th>
+                    <th style={thStyle}>Cantitate</th>
+                    <th style={thStyle}>Data</th>
+                    <th style={thStyle}>Substanță</th>
+                    <th style={thStyle}>Doză</th>
+                    <th style={thStyle}>Data</th>
+                    <th style={thStyle}>Soi, Hibrid</th>
+                    <th style={thStyle}>Cant/HA</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.rows.length === 0 ? (
+                    <tr><td colSpan={19} style={{ ...tdStyle, textAlign: "center", color: C.textMuted, padding: 24 }}>Nu exista date pentru anul selectat.</td></tr>
+                  ) : data.rows.map((r, i) => (
+                    <tr key={i} style={{ background: i % 2 === 0 ? C.white : C.bg }}>
+                      <td style={tdStyle}>{r.parcela}</td>
+                      <td style={tdStyle}>{r.bf}</td>
+                      <td style={tdStyle}>{r.ha}</td>
+                      <td style={{ ...tdStyle, fontWeight: 500, textAlign: "left" }}>{r.cultura}</td>
+                      <td style={tdStyle}>{r.suprTeren}</td>
+                      <td style={tdStyle}>{r.arat || "-"}</td>
+                      <td style={tdStyle}>{r.pregTeren || "-"}</td>
+                      <td style={tdStyle}>{r.fertilizatData || "-"}</td>
+                      <td style={{ ...tdStyle, textAlign: "left", maxWidth: 120 }}>{r.fertilizatIngrasamant || "-"}</td>
+                      <td style={tdStyle}>{r.fertilizatCantitate || "-"}</td>
+                      <td style={tdStyle}>{r.tratamentData || "-"}</td>
+                      <td style={{ ...tdStyle, textAlign: "left", maxWidth: 120 }}>{r.tratamentSubstanta || "-"}</td>
+                      <td style={tdStyle}>{r.tratamentDoza || "-"}</td>
+                      <td style={tdStyle}>{r.semanatData || "-"}</td>
+                      <td style={{ ...tdStyle, textAlign: "left", maxWidth: 120 }}>{r.semanatSoiHibrid || "-"}</td>
+                      <td style={tdStyle}>{r.semanatCantHa || "-"}</td>
+                      <td style={{ ...tdStyle, textAlign: "left", maxWidth: 150, fontSize: 11 }}>{r.lucrariIntretinere || "-"}</td>
+                      <td style={tdStyle}>{r.recoltat || "-"}</td>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{r.productieKgHa || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          <div style={{ marginTop: 12, padding: "10px 16px", background: C.bg, borderRadius: 8, fontSize: 12, color: C.textMuted, display: "flex", justifyContent: "space-between" }}>
+            <span>Nume Prenume Semnătura (și ștampila) FERMIER</span>
+            <span>Nume Inspectori / Semnătura</span>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+
+// ─────────────────────────────────────────────
+// TAB 8: REGISTRUL EXPLOATAȚIEI (Form 001 APIA)
+// ─────────────────────────────────────────────
+function TabRegistruExploatatie({ farmId, token }) {
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const generate = async () => {
+    setLoading(true);
+    try {
+      const res = await api(`/reports/registru-exploatatie/${farmId}/${year}`, token);
+      setData(res);
+    } catch (e) { console.error(e); } finally { setLoading(false); }
+  };
+
+  const doExport = () => {
+    if (!data) return;
+    const headerRow1 = [
+      "Parcela", "BF", "Suprafața ha",
+      "Cultura principală", "", "", "",
+      "Cultura secundară înființată",
+      "Cultura secundară", "", "",
+      "Cultura succesivă", "", "",
+      "Cultura de toamnă", "", ""
+    ];
+    const headerRow2 = [
+      "", "", "",
+      "Cultura", "Perioada pregătire teren și înființare", "Lucrări agricole efectuate cf. tehnologie", "Perioada recoltare",
+      "",
+      "Perioada pregătire în teren și înființare", "Lucrări agricole efectuate", "Perioada recoltare/desființare/încorporare",
+      "Perioada pregătire teren și înființare", "Lucrări agricole efectuate cf. tehnologie", "Perioada recoltare/desființare/încorporare",
+      "Cultura", "Perioada pregătire teren și înființare", "Perioada recoltare"
+    ];
+    const merges = [
+      { s: { r: 0, c: 3 }, e: { r: 0, c: 6 } },    // Cultura principală
+      { s: { r: 0, c: 8 }, e: { r: 0, c: 10 } },   // Cultura secundară
+      { s: { r: 0, c: 11 }, e: { r: 0, c: 13 } },  // Cultura succesivă
+      { s: { r: 0, c: 14 }, e: { r: 0, c: 16 } },  // Cultura de toamnă
+      { s: { r: 0, c: 0 }, e: { r: 1, c: 0 } },
+      { s: { r: 0, c: 1 }, e: { r: 1, c: 1 } },
+      { s: { r: 0, c: 2 }, e: { r: 1, c: 2 } },
+      { s: { r: 0, c: 7 }, e: { r: 1, c: 7 } },
+    ];
+    const rows = data.rows.map((r) => [
+      r.parcela, r.bf, r.suprafataHa,
+      r.principal.cultura, r.principal.pregTeren, r.principal.lucrari, r.principal.recoltare,
+      r.culturaSecundaraInfiintata,
+      r.secundar.pregTeren, r.secundar.lucrari, r.secundar.recoltare,
+      r.succesiv.pregTeren, r.succesiv.lucrari, r.succesiv.recoltare,
+      r.toamna.cultura, r.toamna.pregTeren, r.toamna.recoltare
+    ]);
+    exportExcelMultiHeader([headerRow1, headerRow2], rows, `registru_exploatatie_${year}.xlsx`, "Registrul Exploatatiei", merges);
+  };
+
+  const thStyle = { padding: "8px 6px", fontSize: 11, fontWeight: 600, color: C.forest, background: C.sky, borderBottom: `2px solid ${C.forest}`, textAlign: "center", whiteSpace: "nowrap" };
+  const tdStyle = { padding: "6px", fontSize: 12, borderBottom: `1px solid ${C.border}`, textAlign: "center" };
+  const thGroup = { ...thStyle, background: C.forestLight, color: C.white, letterSpacing: "0.5px" };
+
+  return (
+    <>
+      <Card title="Registrul Exploatației — Formular 001 APIA">
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
+          <Input label="An agricol" type="number" value={year} onChange={(e) => setYear(e.target.value)} style={{ width: 120 }} />
+          <Btn onClick={generate} disabled={loading}>{loading ? "Se genereaza..." : "Genereaza Registrul"}</Btn>
+        </div>
+      </Card>
+
+      {data && (
+        <>
+          <Card style={{ marginTop: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div style={{ fontSize: 13, color: C.textMuted }}>
+                <strong>{data.farm.name}</strong> — Sediul exploatației: {data.farm.sediu} — ID Fermier: {data.farm.cui || "-"}
+              </div>
+              <Btn variant="secondary" onClick={doExport}>Exporta Excel (.xlsx)</Btn>
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1600 }}>
+                <thead>
+                  <tr>
+                    <th rowSpan={2} style={thStyle}>Parcela</th>
+                    <th rowSpan={2} style={thStyle}>BF</th>
+                    <th rowSpan={2} style={thStyle}>Suprafața ha</th>
+                    <th colSpan={4} style={thGroup}>Cultura principală</th>
+                    <th rowSpan={2} style={{ ...thStyle, background: C.wheatLight, color: C.earth }}>Cultura secundară înființată</th>
+                    <th colSpan={3} style={thGroup}>Cultura secundară</th>
+                    <th colSpan={3} style={thGroup}>Cultura succesivă</th>
+                    <th colSpan={3} style={{ ...thGroup, background: C.soil }}>Cultura de toamnă</th>
+                  </tr>
+                  <tr>
+                    <th style={thStyle}>Cultura</th>
+                    <th style={thStyle}>Perioada pregătire teren și înființare</th>
+                    <th style={thStyle}>Lucrări agricole efectuate cf. tehnologie</th>
+                    <th style={thStyle}>Perioada recoltare</th>
+                    <th style={thStyle}>Perioada pregătire în teren și înființare</th>
+                    <th style={thStyle}>Lucrări agricole efectuate</th>
+                    <th style={thStyle}>Perioada recoltare/ desființare/ încorporare</th>
+                    <th style={thStyle}>Perioada pregătire teren și înființare</th>
+                    <th style={thStyle}>Lucrări agricole efectuate cf. tehnologie</th>
+                    <th style={thStyle}>Perioada recoltare/ desființare/ încorporare</th>
+                    <th style={thStyle}>Cultura</th>
+                    <th style={thStyle}>Perioada pregătire teren și înființare</th>
+                    <th style={thStyle}>Perioada recoltare</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.rows.length === 0 ? (
+                    <tr><td colSpan={17} style={{ ...tdStyle, textAlign: "center", color: C.textMuted, padding: 24 }}>Nu exista date pentru anul selectat.</td></tr>
+                  ) : data.rows.map((r, i) => (
+                    <tr key={i} style={{ background: i % 2 === 0 ? C.white : C.bg }}>
+                      <td style={tdStyle}>{r.parcela}</td>
+                      <td style={tdStyle}>{r.bf}</td>
+                      <td style={tdStyle}>{r.suprafataHa}</td>
+                      <td style={{ ...tdStyle, fontWeight: 500, textAlign: "left" }}>{r.principal.cultura || "-"}</td>
+                      <td style={{ ...tdStyle, fontSize: 11 }}>{r.principal.pregTeren || "-"}</td>
+                      <td style={{ ...tdStyle, fontSize: 11, textAlign: "left", maxWidth: 160 }}>{r.principal.lucrari || "-"}</td>
+                      <td style={tdStyle}>{r.principal.recoltare || "-"}</td>
+                      <td style={{ ...tdStyle, fontWeight: 500, background: i % 2 === 0 ? "#fffbe6" : "#fff8d6" }}>{r.culturaSecundaraInfiintata || "-"}</td>
+                      <td style={{ ...tdStyle, fontSize: 11 }}>{r.secundar.pregTeren || "-"}</td>
+                      <td style={{ ...tdStyle, fontSize: 11, textAlign: "left", maxWidth: 160 }}>{r.secundar.lucrari || "-"}</td>
+                      <td style={tdStyle}>{r.secundar.recoltare || "-"}</td>
+                      <td style={{ ...tdStyle, fontSize: 11 }}>{r.succesiv.pregTeren || "-"}</td>
+                      <td style={{ ...tdStyle, fontSize: 11, textAlign: "left", maxWidth: 160 }}>{r.succesiv.lucrari || "-"}</td>
+                      <td style={tdStyle}>{r.succesiv.recoltare || "-"}</td>
+                      <td style={{ ...tdStyle, fontWeight: 500 }}>{r.toamna.cultura || "-"}</td>
+                      <td style={{ ...tdStyle, fontSize: 11 }}>{r.toamna.pregTeren || "-"}</td>
+                      <td style={tdStyle}>{r.toamna.recoltare || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </>
+      )}
+    </>
+  );
+}
+
+
+// ─────────────────────────────────────────────
+// TAB 9: MOTORINĂ (stil prima versiune)
 // ─────────────────────────────────────────────
 function TabMotorina({ farmId, token, seasons, fuelEntries, onRefresh }) {
   const [type, setType] = useState("ACHIZITIE");
@@ -1054,7 +1385,7 @@ function TabMotorina({ farmId, token, seasons, fuelEntries, onRefresh }) {
         </div>
       </Card>
 
-      <Card title="Jurnal Gestiune Motorină" actions={<Btn variant="secondary" onClick={() => exportCSV(["Tip", "Data", "Litri", "Preț/L", "Factură/Utilaj", "Furnizor/Lucrare", "Note"], fuelEntries.map(e => [e.type, e.date, e.liters, e.pricePerLiter || "", e.invoiceNumber || e.equipment || "", e.supplier || e.workDescription || "", e.notes || ""]), "jurnal_motorina.csv")}>Exportă CSV</Btn>}>
+      <Card title="Jurnal Gestiune Motorină" actions={<Btn variant="secondary" onClick={() => exportExcel(["Tip", "Data", "Litri", "Preț/L", "Factură/Utilaj", "Furnizor/Lucrare", "Note"], fuelEntries.map(e => [e.type, e.date, e.liters, e.pricePerLiter || "", e.invoiceNumber || e.equipment || "", e.supplier || e.workDescription || "", e.notes || ""]), "jurnal_motorina.xlsx", "Jurnal Motorina")}>Exportă Excel</Btn>}>
         <Table headers={["Tip", "Data", "Litri", "Detalii", "Note", "Acțiuni"]}
           rows={fuelEntries.map(e => [
             <span style={{ color: e.type === "ACHIZITIE" ? C.forest : C.warn, fontWeight: 600, textTransform: "capitalize" }}>{e.type.toLowerCase()}</span>,
@@ -1148,13 +1479,13 @@ export default function App() {
 
   if (!user) return <AuthScreen onLogin={login} />;
 
-  const tabs = ["Dashboard", "Terenuri", "Culturi", "Lucrari", "Fise Tehnice", "Recoltare", "Rapoarte APIA", "Motorina"];
+  const tabs = ["Dashboard", "Terenuri", "Culturi", "Lucrari", "Fise Tehnice", "Recoltare", "Rapoarte APIA", "Reg. Fermier", "Reg. Exploatatie", "Motorina"];
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg }}>
       <header style={{ background: `linear-gradient(135deg, ${C.earth} 0%, ${C.forest} 100%)`, padding: "0 24px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 64, position: "sticky", top: 0, zIndex: 100, boxShadow: "0 2px 10px rgba(0,0,0,0.1)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 8, background: C.wheat, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 700, color: C.earth }}>A</div>
+          <img src="/tractor-icon.jpg" alt="AgroSistem" style={{ width: 36, height: 36, borderRadius: "50%", objectFit: "cover" }} />
           <span style={{ color: C.cream, fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700 }}>AgroSistem</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -1186,7 +1517,9 @@ export default function App() {
             {tab === 4 && <TabFiseTehnice farmId={activeFarm} token={token} crops={crops} seasons={seasons} />}
             {tab === 5 && <TabRecoltare farmId={activeFarm} token={token} seasons={seasons} crops={crops} harvests={harvests} onRefresh={fetchData} />}
             {tab === 6 && <TabRapoarteApia farmId={activeFarm} token={token} />}
-            {tab === 7 && <TabMotorina farmId={activeFarm} token={token} seasons={seasons} fuelEntries={fuelEntries} onRefresh={fetchData} />}
+            {tab === 7 && <TabRegistruFermier farmId={activeFarm} token={token} />}
+            {tab === 8 && <TabRegistruExploatatie farmId={activeFarm} token={token} />}
+            {tab === 9 && <TabMotorina farmId={activeFarm} token={token} seasons={seasons} fuelEntries={fuelEntries} onRefresh={fetchData} />}
           </>
         )}
       </main>
