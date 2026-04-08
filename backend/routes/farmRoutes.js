@@ -12,4 +12,7 @@ router.post('/', farmController.createFarm);
 // Ruta: GET /api/farms - Obtinere ferme utilizator
 router.get('/', farmController.getFarms);
 
+// Ruta: PUT /api/farms/:id - Actualizare ferma
+router.put('/:id', farmController.updateFarm);
+
 module.exports = router;

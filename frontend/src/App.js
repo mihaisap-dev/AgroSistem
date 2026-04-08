@@ -72,12 +72,34 @@ function exportCSV(headers, rows, filename) {
 }
 
 // ─────────────────────────────────────────────
+// SORTARE NATURALA (suporta litere: 1, 2a, 10b)
+// ─────────────────────────────────────────────
+function naturalSort(a, b) {
+  return String(a).localeCompare(String(b), "ro", { numeric: true });
+}
+
+// ─────────────────────────────────────────────
+// ANTET FERMA PENTRU EXCEL
+// ─────────────────────────────────────────────
+function farmHeaderRows(farm, title) {
+  return [
+    ["Denumire ferma:", farm?.name || ""],
+    ["Nr. Registrul Comertului:", farm?.registerNumber || ""],
+    ["Cod fiscal (CUI):", farm?.cui || ""],
+    ["Sediu:", [farm?.locality, farm?.county].filter(Boolean).join(", ")],
+    [],
+    [title],
+  ];
+}
+
+// ─────────────────────────────────────────────
 // EXPORT EXCEL (XLSX)
 // ─────────────────────────────────────────────
-function exportExcel(headers, rows, filename, sheetName = "Date") {
-  const data = [headers, ...rows];
+function exportExcel(headers, rows, filename, sheetName = "Date", farm = null, title = "") {
+  const prefix = farm ? farmHeaderRows(farm, title) : [];
+  const data = [...prefix, headers, ...rows];
   const ws = XLSX.utils.aoa_to_sheet(data);
-  // Auto-width columns
+  // Auto-width columns (based on headers + data only)
   ws["!cols"] = headers.map((h, i) => {
     let max = String(h).length;
     rows.forEach((r) => { const len = String(r[i] == null ? "" : r[i]).length; if (len > max) max = len; });
@@ -88,10 +110,16 @@ function exportExcel(headers, rows, filename, sheetName = "Date") {
   XLSX.writeFile(wb, filename);
 }
 
-function exportExcelMultiHeader(headerRows, dataRows, filename, sheetName = "Date", merges = []) {
-  const data = [...headerRows, ...dataRows];
+function exportExcelMultiHeader(headerRows, dataRows, filename, sheetName = "Date", merges = [], farm = null, title = "") {
+  const prefix = farm ? farmHeaderRows(farm, title) : [];
+  const prefixLen = prefix.length;
+  const data = [...prefix, ...headerRows, ...dataRows];
   const ws = XLSX.utils.aoa_to_sheet(data);
-  if (merges.length > 0) ws["!merges"] = merges;
+  // Shift merges to account for prefix rows
+  if (merges.length > 0) ws["!merges"] = merges.map((m) => ({
+    s: { r: m.s.r + prefixLen, c: m.s.c },
+    e: { r: m.e.r + prefixLen, c: m.e.c },
+  }));
   // Auto-width based on last header row and data
   const lastHeader = headerRows[headerRows.length - 1] || [];
   ws["!cols"] = lastHeader.map((h, i) => {
@@ -239,13 +267,14 @@ function StatBox({ label, value, color }) {
 // ─────────────────────────────────────────────
 // HARTĂ PARCELE (SVG)
 // ─────────────────────────────────────────────
-function ParcelMap({ blocks, seasons }) {
+function ParcelMap({ blocks, seasons, onParcelClick }) {
   const parcels = blocks.flatMap((b) => (b.parcele || []).map((p) => ({ ...p, blockNumber: b.blockNumber })));
   const maxArea = Math.max(...parcels.map((p) => p.areaHa), 1);
   const colors = ["#2d6a4f", "#6b4423", "#dda15e", "#e36414", "#264653", "#e76f51", "#606c38", "#8d6346"];
 
   return (
     <div style={{ overflowX: "auto" }}>
+      {onParcelClick && <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 6 }}>Click pe o parcelă pentru a vedea istoricul culturilor.</div>}
       <svg viewBox={`0 0 ${Math.max(blocks.length * 200, 680)} 240`} width="100%" style={{ minWidth: 400 }}>
         {blocks.map((block, bi) => {
           const bParcels = parcels.filter((p) => p.blockId === block.id);
@@ -262,10 +291,13 @@ function ParcelMap({ blocks, seasons }) {
                 py += h + 6;
                 const ps = seasons.find((s) => s.parcelId === p.id);
                 return (
-                  <g key={p.id}>
+                  <g key={p.id} onClick={() => onParcelClick && onParcelClick(p)} style={{ cursor: onParcelClick ? "pointer" : "default" }}>
                     <rect x={bx + 10} y={y} width={150} height={h} rx={4} fill={col + "44"} stroke={col} strokeWidth={0.8} />
-                    <text x={bx + 18} y={y + h / 2 + 1} fontSize={10} fill={col} dominantBaseline="central">P{p.parcelNumber} — {p.areaHa} ha</text>
-                    {ps?.cultura && <text x={bx + 152} y={y + h / 2 + 1} fontSize={9} fill="#555" dominantBaseline="central" textAnchor="end">{ps.cultura.name.substring(0, 12)}</text>}
+                    <rect x={bx + 10} y={y} width={150} height={h} rx={4} fill="transparent" stroke={col} strokeWidth={onParcelClick ? 0 : 0}
+                      onMouseEnter={e => { if (onParcelClick) e.currentTarget.setAttribute("fill", col + "22"); }}
+                      onMouseLeave={e => { if (onParcelClick) e.currentTarget.setAttribute("fill", "transparent"); }} />
+                    <text x={bx + 18} y={y + h / 2 + 1} fontSize={10} fill={col} dominantBaseline="central" style={{ pointerEvents: "none" }}>P{p.parcelNumber} — {p.areaHa} ha</text>
+                    {ps?.cultura && <text x={bx + 152} y={y + h / 2 + 1} fontSize={9} fill="#555" dominantBaseline="central" textAnchor="end" style={{ pointerEvents: "none" }}>{ps.cultura.name.substring(0, 12)}</text>}
                   </g>
                 );
               })}
@@ -273,6 +305,63 @@ function ParcelMap({ blocks, seasons }) {
           );
         })}
       </svg>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// MODAL: ISTORIC CULTURI PARCELA
+// ─────────────────────────────────────────────
+function ParcelHistoryModal({ parcel, seasons, onClose }) {
+  const hist = seasons
+    .filter((s) => s.parcelId === parcel.id)
+    .sort((a, b) => b.year - a.year || a.season.localeCompare(b.season));
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: C.bgCard, borderRadius: 14, padding: 28, width: 540, maxWidth: "95vw", maxHeight: "80vh", overflowY: "auto", boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: C.earth }}>
+              Istoric culturi — B{parcel.blockNumber}/P{parcel.parcelNumber}
+            </h3>
+            <div style={{ fontSize: 13, color: C.textMuted, marginTop: 4 }}>
+              {parcel.areaHa} ha · {parcel.landCategory} · {parcel.locality || ""}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: C.textMuted, lineHeight: 1 }}>✕</button>
+        </div>
+        {hist.length === 0 ? (
+          <div style={{ padding: "24px 0", textAlign: "center", color: C.textMuted, fontSize: 14 }}>Nu exista culturi inregistrate pentru aceasta parcela.</div>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                {["An", "Sezon", "Cultura", "Rotatie"].map((h) => (
+                  <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontSize: 12, fontWeight: 600, color: C.forest, background: C.sky, borderBottom: `2px solid ${C.forestLight}` }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {hist.map((s, i) => (
+                <tr key={s.id} style={{ background: i % 2 === 0 ? C.bgCard : C.bg }}>
+                  <td style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, color: C.earth }}>{s.year}</td>
+                  <td style={{ padding: "8px 10px", fontSize: 13, color: C.textMuted }}>{s.season}</td>
+                  <td style={{ padding: "8px 10px", fontSize: 13 }}>{s.cultura?.name || "—"}</td>
+                  <td style={{ padding: "8px 10px", fontSize: 12 }}>
+                    {s.rotationWarning
+                      ? <span style={{ color: C.danger, fontWeight: 600 }}>⚠ Nerespectată</span>
+                      : <span style={{ color: C.forestLight }}>OK</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <div style={{ marginTop: 16, textAlign: "right" }}>
+          <Btn variant="secondary" onClick={onClose}>Inchide</Btn>
+        </div>
+      </div>
     </div>
   );
 }
@@ -341,6 +430,7 @@ function AuthScreen({ onLogin }) {
 function FarmSetup({ token, onCreated }) {
   const [name, setName] = useState("");
   const [cui, setCui] = useState("");
+  const [registerNumber, setRegisterNumber] = useState("");
   const [loc, setLoc] = useState("");
   const [county, setCounty] = useState("");
   const [iban, setIban] = useState("");
@@ -351,7 +441,7 @@ function FarmSetup({ token, onCreated }) {
     if (!name) return;
     setLoading(true);
     try {
-      const data = await api("/farms", token, { method: "POST", body: { name, cui, locality: loc, county, iban, bank } });
+      const data = await api("/farms", token, { method: "POST", body: { name, cui, registerNumber, locality: loc, county, iban, bank } });
       onCreated(data.id);
     } catch (error) {
       console.error(error);
@@ -365,6 +455,7 @@ function FarmSetup({ token, onCreated }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Input label="Denumire ferma / exploatatie" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Ferma Deleni" />
         <Input label="CUI / Cod fiscal" value={cui} onChange={(e) => setCui(e.target.value)} />
+        <Input label="Nr. Registrul Comertului" value={registerNumber} onChange={(e) => setRegisterNumber(e.target.value)} placeholder="ex: J01/123/2020" />
         <Input label="Localitate" value={loc} onChange={(e) => setLoc(e.target.value)} />
         <Input label="Judet" value={county} onChange={(e) => setCounty(e.target.value)} />
         <Input label="IBAN" value={iban} onChange={(e) => setIban(e.target.value)} />
@@ -376,9 +467,55 @@ function FarmSetup({ token, onCreated }) {
 }
 
 // ─────────────────────────────────────────────
+// EDITARE FERMA
+// ─────────────────────────────────────────────
+function FarmEdit({ token, farm, onSaved, onCancel }) {
+  const [name, setName] = useState(farm?.name || "");
+  const [cui, setCui] = useState(farm?.cui || "");
+  const [registerNumber, setRegisterNumber] = useState(farm?.registerNumber || "");
+  const [loc, setLoc] = useState(farm?.locality || "");
+  const [county, setCounty] = useState(farm?.county || "");
+  const [iban, setIban] = useState(farm?.iban || "");
+  const [bank, setBank] = useState(farm?.bank || "");
+  const [loading, setLoading] = useState(false);
+
+  const save = async () => {
+    if (!name) return;
+    setLoading(true);
+    try {
+      const data = await api(`/farms/${farm.id}`, token, { method: "PUT", body: { name, cui, registerNumber, locality: loc, county, iban, bank } });
+      onSaved(data);
+    } catch (error) { console.error(error); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: C.bgCard, borderRadius: 14, padding: 32, width: 560, maxWidth: "95vw", boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}>
+        <h3 style={{ margin: "0 0 20px", fontSize: 18, fontWeight: 700, color: C.earth }}>Editare date ferma</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Input label="Denumire ferma / exploatatie" value={name} onChange={(e) => setName(e.target.value)} />
+          <Input label="CUI / Cod fiscal" value={cui} onChange={(e) => setCui(e.target.value)} />
+          <Input label="Nr. Registrul Comertului" value={registerNumber} onChange={(e) => setRegisterNumber(e.target.value)} placeholder="ex: J01/123/2020" />
+          <Input label="Localitate (sediu)" value={loc} onChange={(e) => setLoc(e.target.value)} />
+          <Input label="Judet" value={county} onChange={(e) => setCounty(e.target.value)} />
+          <Input label="IBAN" value={iban} onChange={(e) => setIban(e.target.value)} />
+          <Input label="Banca" value={bank} onChange={(e) => setBank(e.target.value)} />
+        </div>
+        <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+          <Btn onClick={save} disabled={!name || loading}>Salveaza</Btn>
+          <Btn variant="secondary" onClick={onCancel}>Anuleaza</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // TAB 0: DASHBOARD
 // ─────────────────────────────────────────────
 function TabDashboard({ blocks, seasons, harvests, works }) {
+  const [selectedParcel, setSelectedParcel] = useState(null);
   const allParcels = blocks.flatMap((b) => b.parcele || []);
   const totalArea = allParcels.reduce((s, p) => s + p.areaHa, 0);
   const currentYear = new Date().getFullYear();
@@ -387,6 +524,7 @@ function TabDashboard({ blocks, seasons, harvests, works }) {
 
   return (
     <>
+      {selectedParcel && <ParcelHistoryModal parcel={selectedParcel} seasons={seasons} onClose={() => setSelectedParcel(null)} />}
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
         <StatBox label="Suprafata totala (ha)" value={Math.round(totalArea * 100) / 100} color={C.forest} />
         <StatBox label="Blocuri fizice" value={blocks.length} color={C.soil} />
@@ -401,7 +539,7 @@ function TabDashboard({ blocks, seasons, harvests, works }) {
           <Table headers={["Parcela", "Cultura", "Sezon"]} rows={currentSeasons.slice(0, 8).map((s) => [`B${s.parcel?.block?.blockNumber}/P${s.parcel?.parcelNumber}`, s.cultura?.name || "-", s.season])} />
         </Card>
       </div>
-      {blocks.length > 0 && <Card title="Harta exploatatie (SVG)"><ParcelMap blocks={blocks} seasons={seasons} /></Card>}
+      {blocks.length > 0 && <Card title="Harta exploatatie (SVG)"><ParcelMap blocks={blocks} seasons={seasons} onParcelClick={(p) => setSelectedParcel({ ...p, blockNumber: blocks.find(b => b.id === p.blockId)?.blockNumber })} /></Card>}
     </>
   );
 }
@@ -409,7 +547,8 @@ function TabDashboard({ blocks, seasons, harvests, works }) {
 // ─────────────────────────────────────────────
 // TAB 1: TERENURI
 // ─────────────────────────────────────────────
-function TabTerenuri({ farmId, token, blocks, seasons, onRefresh }) {
+function TabTerenuri({ farmId, token, blocks, seasons, farm, onRefresh }) {
+  const [selectedParcel, setSelectedParcel] = useState(null); // pentru modal istoric culturi
   const [blockNr, setBlockNr] = useState("");
   const [blockName, setBlockName] = useState("");
   const [blocLoc, setBlocLoc] = useState("");
@@ -438,7 +577,7 @@ function TabTerenuri({ farmId, token, blocks, seasons, onRefresh }) {
     if (!selBlock || !parcelNr || !area) return;
     setLoading(true);
     try {
-      await api("/parcels", token, { method: "POST", body: { blockId: Number(selBlock), parcelNumber: Number(parcelNr), areaHa: Number(area), landCategory: cat } });
+      await api("/parcels", token, { method: "POST", body: { blockId: Number(selBlock), parcelNumber: parcelNr, areaHa: Number(area), landCategory: cat } });
       onRefresh();
       setParcelNr(""); setArea("");
     } catch (error) { console.error(error); } finally { setLoading(false); }
@@ -471,7 +610,10 @@ function TabTerenuri({ farmId, token, blocks, seasons, onRefresh }) {
     } catch (e) { console.error(e); }
   };
 
-  const allParcels = useMemo(() => blocks.flatMap((b) => (b.parcele || []).map((p) => ({ ...p, blockNumber: b.blockNumber, blockId: b.id, locality: b.locality }))), [blocks]);
+  const allParcels = useMemo(() => blocks.flatMap((b) => (b.parcele || []).map((p) => ({ ...p, blockNumber: b.blockNumber, blockId: b.id, locality: b.locality }))).sort((a, b) => {
+    const bn = naturalSort(a.blockNumber, b.blockNumber);
+    return bn !== 0 ? bn : naturalSort(a.parcelNumber, b.parcelNumber);
+  }), [blocks]);
 
   return (
     <>
@@ -493,7 +635,7 @@ function TabTerenuri({ farmId, token, blocks, seasons, onRefresh }) {
       {editParcel && (
         <Card title="Editare Parcela" style={{ border: `2px solid ${C.wheat}` }}>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-            <Input label="Nr. Parcela" type="number" value={editParcel.parcelNumber} onChange={(e) => setEditParcel({ ...editParcel, parcelNumber: Number(e.target.value) })} />
+            <Input label="Nr. Parcela" type="text" value={editParcel.parcelNumber} onChange={(e) => setEditParcel({ ...editParcel, parcelNumber: e.target.value })} placeholder="ex: 1, 2a, 10b" />
             <Input label="Suprafata (ha)" type="number" step="0.01" value={editParcel.areaHa} onChange={(e) => setEditParcel({ ...editParcel, areaHa: Number(e.target.value) })} />
             <Select label="Categorie" value={editParcel.landCategory} onChange={(e) => setEditParcel({ ...editParcel, landCategory: e.target.value })} options={[{ value: "TA", label: "TA (Arabil)" }, { value: "PP", label: "PP (Pasune)" }, { value: "VI", label: "VI (Vie)" }, { value: "LV", label: "LV (Livada)" }]} />
             <Btn onClick={saveEditParcel}>Salveaza</Btn>
@@ -516,7 +658,7 @@ function TabTerenuri({ farmId, token, blocks, seasons, onRefresh }) {
         <Card title="Adauga Parcela">
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
             <Select label="Alege Bloc" value={selBlock} onChange={(e) => setSelBlock(e.target.value)} options={blocks.map((b) => ({ value: b.id, label: `Bloc ${b.blockNumber}` }))} />
-            <Input label="Nr. Parcela" type="number" value={parcelNr} onChange={(e) => setParcelNr(e.target.value)} style={{ width: 90 }} />
+            <Input label="Nr. Parcela" type="text" value={parcelNr} onChange={(e) => setParcelNr(e.target.value)} style={{ width: 90 }} placeholder="ex: 1, 2a" />
             <Input label="Suprafata (ha)" type="number" step="0.01" value={area} onChange={(e) => setArea(e.target.value)} style={{ width: 110 }} />
             <Select label="Categorie" value={cat} onChange={(e) => setCat(e.target.value)} options={[{ value: "TA", label: "TA (Arabil)" }, { value: "PP", label: "PP (Pasune)" }, { value: "VI", label: "VI (Vie)" }, { value: "LV", label: "LV (Livada)" }]} />
             <Btn onClick={addParcel} disabled={loading}>Adauga parcela</Btn>
@@ -537,12 +679,15 @@ function TabTerenuri({ farmId, token, blocks, seasons, onRefresh }) {
         />
       </Card>
 
-      <Card title="Registru Parcele" actions={<Btn variant="secondary" onClick={() => exportExcel(["Bloc Fizic", "Nr Parcela", "Suprafata (ha)", "Categorie", "Localitate"], allParcels.map((p) => [p.blockNumber, p.parcelNumber, p.areaHa, p.landCategory, p.locality]), "parcele.xlsx", "Parcele")}>Exporta Excel</Btn>}>
+      {selectedParcel && <ParcelHistoryModal parcel={selectedParcel} seasons={seasons} onClose={() => setSelectedParcel(null)} />}
+
+      <Card title="Registru Parcele" actions={<Btn variant="secondary" onClick={() => exportExcel(["Bloc Fizic", "Nr Parcela", "Suprafata (ha)", "Categorie", "Localitate"], allParcels.map((p) => [p.blockNumber, p.parcelNumber, p.areaHa, p.landCategory, p.locality]), "parcele.xlsx", "Parcele", farm, "REGISTRUL PARCELELOR")}>Exporta Excel</Btn>}>
         <Table
           headers={["Bloc Fizic", "Parcela", "Suprafata (ha)", "Categorie", "Localitate", "Actiuni"]}
           rows={allParcels.map((p) => [
             p.blockNumber, p.parcelNumber, p.areaHa, p.landCategory, p.locality || "-",
             <div style={{ display: "flex", gap: 4 }}>
+              <Btn variant="small" onClick={() => setSelectedParcel(p)}>Istoric</Btn>
               <Btn variant="small" onClick={() => setEditParcel(p)}>Editeaza</Btn>
               <Btn variant="smallDanger" onClick={() => setDeleteTarget({ type: "parcels", id: p.id })}>Sterge</Btn>
             </div>
@@ -556,15 +701,19 @@ function TabTerenuri({ farmId, token, blocks, seasons, onRefresh }) {
 // ─────────────────────────────────────────────
 // TAB 2: CULTURI & ROTAȚIE
 // ─────────────────────────────────────────────
-function TabCulturi({ token, blocks, crops, seasons, onRefresh }) {
+function TabCulturi({ token, blocks, crops, seasons, farm, onRefresh }) {
   const [selParcel, setSelParcel] = useState("");
   const [selCrop, setSelCrop] = useState("");
   const [year, setYear] = useState(new Date().getFullYear());
   const [season, setSeason] = useState("Toamna");
   const [loading, setLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [editSeason, setEditSeason] = useState(null); // { id, parcelId, cropId, year, season }
 
-  const parcels = useMemo(() => blocks.flatMap((b) => (b.parcele || []).map((p) => ({ ...p, blockNumber: b.blockNumber }))), [blocks]);
+  const parcels = useMemo(() => blocks.flatMap((b) => (b.parcele || []).map((p) => ({ ...p, blockNumber: b.blockNumber }))).sort((a, b) => {
+    const bn = naturalSort(a.blockNumber, b.blockNumber);
+    return bn !== 0 ? bn : naturalSort(a.parcelNumber, b.parcelNumber);
+  }), [blocks]);
 
   const checkRotation = (pid, cid, yr) => seasons.some((s) => s.parcelId === Number(pid) && s.cropId === Number(cid) && s.year === Number(yr) - 1);
 
@@ -578,6 +727,16 @@ function TabCulturi({ token, blocks, crops, seasons, onRefresh }) {
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
+  const handleUpdate = async () => {
+    if (!editSeason) return;
+    try {
+      const warn = checkRotation(editSeason.parcelId, editSeason.cropId, editSeason.year);
+      await api(`/seasons/${editSeason.id}`, token, { method: "PUT", body: { parcelId: editSeason.parcelId, cropId: Number(editSeason.cropId), year: Number(editSeason.year), season: editSeason.season, rotationWarning: warn } });
+      setEditSeason(null);
+      onRefresh();
+    } catch (e) { console.error(e); }
+  };
+
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
@@ -589,9 +748,31 @@ function TabCulturi({ token, blocks, crops, seasons, onRefresh }) {
 
   const warnings = seasons.filter((s) => s.rotationWarning);
 
+  const sortedSeasons = [...seasons].sort((a, b) => {
+    if (b.year !== a.year) return b.year - a.year;
+    const bn = naturalSort(a.parcel?.block?.blockNumber, b.parcel?.block?.blockNumber);
+    return bn !== 0 ? bn : naturalSort(a.parcel?.parcelNumber, b.parcel?.parcelNumber);
+  });
+
   return (
     <>
       {deleteTarget && <ConfirmDelete message="Sigur doriti sa stergeti aceasta alocare de cultura?" onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} />}
+      {editSeason && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: C.bgCard, borderRadius: 14, padding: 28, width: 480, maxWidth: "95vw", boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}>
+            <h3 style={{ margin: "0 0 16px", fontSize: 17, fontWeight: 700, color: C.earth }}>Modificare cultura parcela</h3>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+              <Select label="Cultura" value={editSeason.cropId} onChange={(e) => setEditSeason({ ...editSeason, cropId: e.target.value })} options={crops.map((c) => ({ value: c.id, label: c.name }))} />
+              <Input label="An Agricol" type="number" value={editSeason.year} onChange={(e) => setEditSeason({ ...editSeason, year: e.target.value })} style={{ width: 100 }} />
+              <Select label="Sezon" value={editSeason.season} onChange={(e) => setEditSeason({ ...editSeason, season: e.target.value })} options={[{ value: "Toamna", label: "Toamna" }, { value: "Primavara", label: "Primavara" }]} />
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+              <Btn onClick={handleUpdate}>Salveaza</Btn>
+              <Btn variant="secondary" onClick={() => setEditSeason(null)}>Anuleaza</Btn>
+            </div>
+          </div>
+        </div>
+      )}
       {warnings.length > 0 && <Warning>Atentie! {warnings.length} parcel(e) au aceeasi cultura ca anul precedent (rotatie nerespectata).</Warning>}
       <Card title="Alocare Cultura si Verificare Rotatie">
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
@@ -603,13 +784,16 @@ function TabCulturi({ token, blocks, crops, seasons, onRefresh }) {
         </div>
         {selParcel && selCrop && checkRotation(selParcel, selCrop, year) && <div style={{ marginTop: 12, color: C.danger, fontSize: 13, fontWeight: 600 }}>Aceeasi cultura a fost pe aceasta parcela anul trecut!</div>}
       </Card>
-      <Card title="Istoric Culturi" actions={<Btn variant="secondary" onClick={() => exportExcel(["An", "Sezon", "Bloc Fizic", "Nr. Parcela", "Suprafata (ha)", "Cultura", "Rotatie"], seasons.map((s) => [s.year, s.season, s.parcel?.block?.blockNumber, s.parcel?.parcelNumber, s.parcel?.areaHa, s.cultura?.name, s.rotationWarning ? "Nerespectata" : "OK"]), "istoric_culturi.xlsx", "Istoric Culturi")}>Exporta Excel</Btn>}>
+      <Card title="Istoric Culturi" actions={<Btn variant="secondary" onClick={() => exportExcel(["An", "Sezon", "Bloc Fizic", "Nr. Parcela", "Suprafata (ha)", "Cultura", "Rotatie"], sortedSeasons.map((s) => [s.year, s.season, s.parcel?.block?.blockNumber, s.parcel?.parcelNumber, s.parcel?.areaHa, s.cultura?.name, s.rotationWarning ? "Nerespectata" : "OK"]), "istoric_culturi.xlsx", "Istoric Culturi", farm, "ISTORIC CULTURI")}>Exporta Excel</Btn>}>
         <Table
           headers={["An", "Sezon", "Bloc Fizic", "Nr. Parcela", "Suprafata (ha)", "Cultura", "Rotatie", "Actiuni"]}
-          rows={seasons.map((s) => [
+          rows={sortedSeasons.map((s) => [
             s.year, s.season, s.parcel?.block?.blockNumber, s.parcel?.parcelNumber, s.parcel?.areaHa, s.cultura?.name,
             s.rotationWarning ? <span style={{ color: C.danger, fontWeight: 600 }}>&#9888; Nerespectată</span> : <span style={{ color: C.forestLight }}>OK</span>,
-            <Btn variant="smallDanger" onClick={() => setDeleteTarget(s.id)}>Sterge</Btn>
+            <div style={{ display: "flex", gap: 6 }}>
+              <Btn variant="secondary" style={{ padding: "3px 10px", fontSize: 12 }} onClick={() => setEditSeason({ id: s.id, parcelId: s.parcelId, cropId: s.cropId, year: s.year, season: s.season })}>Editeaza</Btn>
+              <Btn variant="smallDanger" onClick={() => setDeleteTarget(s.id)}>Sterge</Btn>
+            </div>
           ])}
         />
       </Card>
@@ -620,7 +804,7 @@ function TabCulturi({ token, blocks, crops, seasons, onRefresh }) {
 // ─────────────────────────────────────────────
 // TAB 3: LUCRĂRI AGRICOLE
 // ─────────────────────────────────────────────
-function TabLucrari({ token, seasons, workTypes, works, onRefresh }) {
+function TabLucrari({ token, seasons, workTypes, works, farm, onRefresh }) {
   const [selPs, setSelPs] = useState("");
   const [selWorkType, setSelWorkType] = useState("");
   const [period, setPeriod] = useState("");
@@ -657,6 +841,11 @@ function TabLucrari({ token, seasons, workTypes, works, onRefresh }) {
     if (filterCrop && w.sezon?.cultura?.name !== filterCrop) return false;
     if (filterCat && w.tip?.category !== filterCat) return false;
     return true;
+  }).sort((a, b) => {
+    const yearDiff = (b.sezon?.year || 0) - (a.sezon?.year || 0);
+    if (yearDiff !== 0) return yearDiff;
+    const bn = naturalSort(a.sezon?.parcel?.block?.blockNumber, b.sezon?.parcel?.block?.blockNumber);
+    return bn !== 0 ? bn : naturalSort(a.sezon?.parcel?.parcelNumber, b.sezon?.parcel?.parcelNumber);
   });
 
   return (
@@ -679,7 +868,7 @@ function TabLucrari({ token, seasons, workTypes, works, onRefresh }) {
         <div style={{ display: "flex", gap: 8 }}>
           <Select value={filterCrop} onChange={(e) => setFilterCrop(e.target.value)} options={uniqueCrops.map((c) => ({ value: c, label: c }))} style={{ fontSize: 12, padding: "4px 8px" }} />
           <Select value={filterCat} onChange={(e) => setFilterCat(e.target.value)} options={uniqueCats.map((c) => ({ value: c, label: c }))} style={{ fontSize: 12, padding: "4px 8px" }} />
-          <Btn variant="secondary" onClick={() => exportExcel(["Categorie", "Lucrare", "Perioada", "Cultură", "Suprafață (ha)", "Parcelă", "Utilaj", "Produse", "Cant./ha", "U.M."], filtered.map((w) => [w.tip?.category, w.tip?.name, w.period, w.sezon?.cultura?.name, w.sezon?.parcel?.areaHa, `B${w.sezon?.parcel?.block?.blockNumber}/P${w.sezon?.parcel?.parcelNumber}`, w.equipment, w.products, w.qtyPerHa, w.unit]), "lucrari.xlsx", "Lucrari")}>Exporta Excel</Btn>
+          <Btn variant="secondary" onClick={() => exportExcel(["Categorie", "Lucrare", "Perioada", "Cultură", "Suprafață (ha)", "Parcelă", "Utilaj", "Produse", "Cant./ha", "U.M."], filtered.map((w) => [w.tip?.category, w.tip?.name, w.period, w.sezon?.cultura?.name, w.sezon?.parcel?.areaHa, `B${w.sezon?.parcel?.block?.blockNumber}/P${w.sezon?.parcel?.parcelNumber}`, w.equipment, w.products, w.qtyPerHa, w.unit]), "lucrari.xlsx", "Lucrari", farm, "REGISTRUL LUCRARILOR AGRICOLE")}>Exporta Excel</Btn>
         </div>
       }>
         <Table
@@ -790,7 +979,7 @@ function TabFiseTehnice({ farmId, token, crops, seasons }) {
 // ─────────────────────────────────────────────
 // TAB 5: RECOLTARE (stil prima versiune)
 // ─────────────────────────────────────────────
-function TabRecoltare({ farmId, token, seasons, crops, harvests, onRefresh }) {
+function TabRecoltare({ farmId, token, seasons, crops, harvests, farm, onRefresh }) {
   const [selCropYear, setSelCropYear] = useState("");
   const [harvestDate, setHarvestDate] = useState("");
   const [totalQty, setTotalQty] = useState("");
@@ -800,6 +989,7 @@ function TabRecoltare({ farmId, token, seasons, crops, harvests, onRefresh }) {
   const [loading, setLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [success, setSuccess] = useState("");
+  const [chartCrop, setChartCrop] = useState("");
 
   const cropYearGroups = useMemo(() => {
     const groups = {};
@@ -856,6 +1046,27 @@ function TabRecoltare({ farmId, token, seasons, crops, harvests, onRefresh }) {
     return Object.values(groups).sort((a, b) => b.date.localeCompare(a.date));
   }, [harvests]);
 
+  // Statistici productie anuala per cultura
+  const cropYearStats = useMemo(() => {
+    const stats = {};
+    harvests.forEach((h) => {
+      const cropName = h.sezon?.cultura?.name;
+      const year = h.sezon?.year || parseInt(h.harvestDate?.substring(0, 4));
+      if (!cropName || !year) return;
+      const key = `${cropName}__${year}`;
+      if (!stats[key]) stats[key] = { crop: cropName, year, totalKg: 0, totalHa: 0 };
+      stats[key].totalKg += h.quantityKg;
+      stats[key].totalHa += (h.sezon?.parcel?.areaHa || 0);
+    });
+    return Object.values(stats)
+      .map(s => ({ ...s, kgPerHa: s.totalHa > 0 ? Math.round(s.totalKg / s.totalHa) : 0 }))
+      .sort((a, b) => a.crop.localeCompare(b.crop) || a.year - b.year);
+  }, [harvests]);
+
+  const cropNames = [...new Set(cropYearStats.map(s => s.crop))];
+  const activeCrop = chartCrop || cropNames[0] || "";
+  const chartPoints = cropYearStats.filter(s => s.crop === activeCrop);
+
   return (
     <>
       {deleteTarget && <ConfirmDelete message="Sigur doriti sa stergeti aceasta recoltare?" onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} />}
@@ -885,7 +1096,7 @@ function TabRecoltare({ farmId, token, seasons, crops, harvests, onRefresh }) {
           actions={<Btn variant="secondary" onClick={() => exportExcel(
             ["Nr.crt", "Data", "Produs", "Sola", "Suprafață (ha)", "Cantitate (kg)", "Nr. Aviz", "Umiditate %", "Destinație"],
             session.entries.map((e, i) => [i + 1, session.date, session.crop?.name, `B${e.sezon?.parcel?.block?.blockNumber}/P${e.sezon?.parcel?.parcelNumber}`, e.sezon?.parcel?.areaHa, e.quantityKg, e.avizNumber || "", e.humidity || "", e.destination]),
-            `jurnal_recoltare_${session.crop?.name}_${session.date}.xlsx`, "Jurnal Recoltare"
+            `jurnal_recoltare_${session.crop?.name}_${session.date}.xlsx`, "Jurnal Recoltare", farm, "REGISTRUL RECOLTARII"
           )} style={{ fontSize: 12, padding: "4px 12px" }}>Exportă Excel</Btn>}>
           <div style={{ background: C.bg, borderRadius: 8, padding: 12, marginBottom: 12, display: "flex", gap: 20, fontSize: 13, flexWrap: "wrap" }}>
             <span><strong>Total cantitate:</strong> {session.totalQty.toLocaleString()} kg</span>
@@ -899,15 +1110,110 @@ function TabRecoltare({ farmId, token, seasons, crops, harvests, onRefresh }) {
             ])} />
         </Card>
       ))}
+
+      {cropYearStats.length > 0 && (
+        <Card title="Evolutie Productie Anuala (kg/ha)">
+          {/* Selector cultura */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+            {cropNames.map(c => (
+              <button key={c} onClick={() => setChartCrop(c)} style={{
+                padding: "5px 14px", borderRadius: 20, fontSize: 13, cursor: "pointer", fontWeight: c === activeCrop ? 700 : 400,
+                background: c === activeCrop ? C.forestLight : C.bg,
+                color: c === activeCrop ? C.white : C.textMuted,
+                border: `1px solid ${c === activeCrop ? C.forestLight : C.border}`,
+              }}>{c}</button>
+            ))}
+          </div>
+
+          {/* Grafic SVG */}
+          <div style={{ background: C.bg, borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
+            <ProductionChart points={chartPoints} />
+          </div>
+
+          {/* Tabel sinteza */}
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                {["Cultura", "An", "Suprafata recoltata (ha)", "Total kg", "Randament (kg/ha)"].map(h => (
+                  <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 12, fontWeight: 600, color: C.forest, background: C.sky, borderBottom: `2px solid ${C.forestLight}` }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {cropYearStats.map((s, i) => (
+                <tr key={`${s.crop}${s.year}`} style={{ background: i % 2 === 0 ? C.bgCard : C.bg }}>
+                  <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 600, color: C.earth }}>{s.crop}</td>
+                  <td style={{ padding: "8px 12px", fontSize: 13 }}>{s.year}</td>
+                  <td style={{ padding: "8px 12px", fontSize: 13 }}>{s.totalHa.toFixed(2)}</td>
+                  <td style={{ padding: "8px 12px", fontSize: 13 }}>{s.totalKg.toLocaleString()}</td>
+                  <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 600, color: C.forestLight }}>{s.kgPerHa.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
     </>
   );
 }
 
 
 // ─────────────────────────────────────────────
+// GRAFIC EVOLUTIE PRODUCTIE (SVG bar chart)
+// ─────────────────────────────────────────────
+function ProductionChart({ points }) {
+  // points: [{ year, kgPerHa, totalKg, totalHa }] sorted asc by year
+  if (!points || points.length === 0) return <div style={{ padding: 24, textAlign: "center", color: C.textMuted, fontSize: 13 }}>Nu exista date de recoltat pentru aceasta cultura.</div>;
+
+  const W = 600, H = 210;
+  const padL = 62, padR = 20, padT = 28, padB = 36;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+  const maxVal = Math.max(...points.map(d => d.kgPerHa), 1);
+  const step = chartW / points.length;
+  const barW = Math.max(20, Math.min(48, step * 0.55));
+  const gridN = 4;
+  const barColor = C.forestLight;
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ maxHeight: 210, display: "block" }}>
+      {/* Grid & Y labels */}
+      {Array.from({ length: gridN + 1 }).map((_, i) => {
+        const y = padT + (chartH / gridN) * i;
+        const val = Math.round(maxVal * (1 - i / gridN));
+        return (
+          <g key={i}>
+            <line x1={padL} y1={y} x2={W - padR} y2={y} stroke={C.border} strokeWidth={0.7} strokeDasharray={i === gridN ? "0" : "4 3"} />
+            <text x={padL - 6} y={y} textAnchor="end" fontSize={9} fill={C.textMuted} dominantBaseline="central">{val.toLocaleString()}</text>
+          </g>
+        );
+      })}
+      {/* Y axis label */}
+      <text x={10} y={padT + chartH / 2} textAnchor="middle" fontSize={9} fill={C.textMuted} transform={`rotate(-90, 10, ${padT + chartH / 2})`}>kg/ha</text>
+      {/* Bars */}
+      {points.map((d, i) => {
+        const barH = Math.max(2, (d.kgPerHa / maxVal) * chartH);
+        const x = padL + step * i + (step - barW) / 2;
+        const y = padT + chartH - barH;
+        return (
+          <g key={d.year}>
+            <rect x={x} y={y} width={barW} height={barH} rx={3} fill={barColor} opacity={0.85} />
+            <text x={x + barW / 2} y={y - 5} textAnchor="middle" fontSize={9} fill={C.forest} fontWeight={600}>{d.kgPerHa.toLocaleString()}</text>
+            <text x={x + barW / 2} y={H - padB + 14} textAnchor="middle" fontSize={10} fill={C.textMuted}>{d.year}</text>
+          </g>
+        );
+      })}
+      {/* Axes */}
+      <line x1={padL} y1={padT} x2={padL} y2={padT + chartH} stroke={C.border} strokeWidth={1} />
+      <line x1={padL} y1={padT + chartH} x2={W - padR} y2={padT + chartH} stroke={C.border} strokeWidth={1} />
+    </svg>
+  );
+}
+
+// ─────────────────────────────────────────────
 // TAB 6: RAPOARTE APIA (stil prima versiune)
 // ─────────────────────────────────────────────
-function TabRapoarteApia({ farmId, token }) {
+function TabRapoarteApia({ farmId, token, farm }) {
   const [year, setYear] = useState(new Date().getFullYear());
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -924,7 +1230,7 @@ function TabRapoarteApia({ farmId, token }) {
     if (!report) return;
     const headers = ["Nr.Crt", "Judet", "Localitate", "Nr. Bloc Fizic", "Nr. Parcela", "Suprafata (ha)", "Categorie", "Cultura", "An", "Sezon", "Interventie DR", "Cod Pachet"];
     const rows = report.rows.map((r) => [r.nrCrt, r.judet, r.localitate, r.blocFizic, r.parcela, r.suprafata, r.landCategory, r.cultura, r.year, r.season, r.drIntervention, r.codPachet]);
-    exportExcel(headers, rows, `raport_apia_${year}.xlsx`, "Raport APIA");
+    exportExcel(headers, rows, `raport_apia_${year}.xlsx`, "Raport APIA", farm, "CERERE DE PLATA APIA");
   };
 
   return (
@@ -1012,7 +1318,7 @@ function TabRapoarteApia({ farmId, token }) {
 // ─────────────────────────────────────────────
 // TAB 7: REGISTRUL FERMIERULUI (Form 013 APIA)
 // ─────────────────────────────────────────────
-function TabRegistruFermier({ farmId, token }) {
+function TabRegistruFermier({ farmId, token, farm }) {
   const [year, setYear] = useState(new Date().getFullYear());
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -1064,7 +1370,7 @@ function TabRegistruFermier({ farmId, token }) {
       r.semanatData, r.semanatSoiHibrid, r.semanatCantHa,
       r.lucrariIntretinere, r.recoltat, r.productieKgHa
     ]);
-    exportExcelMultiHeader([headerRow1, headerRow2], rows, `registru_fermier_${year}.xlsx`, "Registrul Fermierului", merges);
+    exportExcelMultiHeader([headerRow1, headerRow2], rows, `registru_fermier_${year}.xlsx`, "Registrul Fermierului", merges, farm, "REGISTRUL FERMIERULUI (FORMULAR 013)");
   };
 
   const thStyle = { padding: "8px 6px", fontSize: 11, fontWeight: 600, color: C.forest, background: C.sky, borderBottom: `2px solid ${C.forest}`, textAlign: "center", whiteSpace: "nowrap" };
@@ -1164,7 +1470,7 @@ function TabRegistruFermier({ farmId, token }) {
 // ─────────────────────────────────────────────
 // TAB 8: REGISTRUL EXPLOATAȚIEI (Form 001 APIA)
 // ─────────────────────────────────────────────
-function TabRegistruExploatatie({ farmId, token }) {
+function TabRegistruExploatatie({ farmId, token, farm }) {
   const [year, setYear] = useState(new Date().getFullYear());
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -1213,7 +1519,7 @@ function TabRegistruExploatatie({ farmId, token }) {
       r.succesiv.pregTeren, r.succesiv.lucrari, r.succesiv.recoltare,
       r.toamna.cultura, r.toamna.pregTeren, r.toamna.recoltare
     ]);
-    exportExcelMultiHeader([headerRow1, headerRow2], rows, `registru_exploatatie_${year}.xlsx`, "Registrul Exploatatiei", merges);
+    exportExcelMultiHeader([headerRow1, headerRow2], rows, `registru_exploatatie_${year}.xlsx`, "Registrul Exploatatiei", merges, farm, "REGISTRUL EXPLOATATIEI (FORMULAR 001)");
   };
 
   const thStyle = { padding: "8px 6px", fontSize: 11, fontWeight: 600, color: C.forest, background: C.sky, borderBottom: `2px solid ${C.forest}`, textAlign: "center", whiteSpace: "nowrap" };
@@ -1305,7 +1611,7 @@ function TabRegistruExploatatie({ farmId, token }) {
 // ─────────────────────────────────────────────
 // TAB 9: MOTORINĂ (stil prima versiune)
 // ─────────────────────────────────────────────
-function TabMotorina({ farmId, token, seasons, fuelEntries, onRefresh }) {
+function TabMotorina({ farmId, token, seasons, fuelEntries, farm, onRefresh }) {
   const [type, setType] = useState("ACHIZITIE");
   const [date, setDate] = useState("");
   const [liters, setLiters] = useState("");
@@ -1385,9 +1691,9 @@ function TabMotorina({ farmId, token, seasons, fuelEntries, onRefresh }) {
         </div>
       </Card>
 
-      <Card title="Jurnal Gestiune Motorină" actions={<Btn variant="secondary" onClick={() => exportExcel(["Tip", "Data", "Litri", "Preț/L", "Factură/Utilaj", "Furnizor/Lucrare", "Note"], fuelEntries.map(e => [e.type, e.date, e.liters, e.pricePerLiter || "", e.invoiceNumber || e.equipment || "", e.supplier || e.workDescription || "", e.notes || ""]), "jurnal_motorina.xlsx", "Jurnal Motorina")}>Exportă Excel</Btn>}>
+      <Card title="Jurnal Gestiune Motorină" actions={<Btn variant="secondary" onClick={() => exportExcel(["Tip", "Data", "Litri", "Preț/L", "Factură/Utilaj", "Furnizor/Lucrare", "Note"], [...fuelEntries].sort((a, b) => b.date.localeCompare(a.date)).map(e => [e.type, e.date, e.liters, e.pricePerLiter || "", e.invoiceNumber || e.equipment || "", e.supplier || e.workDescription || "", e.notes || ""]), "jurnal_motorina.xlsx", "Jurnal Motorina", farm, "REGISTRUL MOTORINEI")}>Exportă Excel</Btn>}>
         <Table headers={["Tip", "Data", "Litri", "Detalii", "Note", "Acțiuni"]}
-          rows={fuelEntries.map(e => [
+          rows={[...fuelEntries].sort((a, b) => b.date.localeCompare(a.date)).map(e => [
             <span style={{ color: e.type === "ACHIZITIE" ? C.forest : C.warn, fontWeight: 600, textTransform: "capitalize" }}>{e.type.toLowerCase()}</span>,
             e.date, e.liters.toLocaleString(),
             e.type === "ACHIZITIE"
@@ -1417,6 +1723,7 @@ export default function App() {
   const [harvests, setHarvests] = useState([]);
   const [fuelEntries, setFuelEntries] = useState([]);
   const [tab, setTab] = useState(0);
+  const [showFarmEdit, setShowFarmEdit] = useState(false);
 
   const fetchFarms = useCallback(async (t) => {
     try {
@@ -1479,10 +1786,19 @@ export default function App() {
 
   if (!user) return <AuthScreen onLogin={login} />;
 
+  const activeFarmObj = farms.find((f) => f.id === activeFarm) || null;
   const tabs = ["Dashboard", "Terenuri", "Culturi", "Lucrari", "Fise Tehnice", "Recoltare", "Rapoarte APIA", "Reg. Fermier", "Reg. Exploatatie", "Motorina"];
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg }}>
+      {showFarmEdit && activeFarmObj && (
+        <FarmEdit
+          token={token}
+          farm={activeFarmObj}
+          onSaved={(updated) => { setFarms((prev) => prev.map((f) => f.id === updated.id ? updated : f)); setShowFarmEdit(false); }}
+          onCancel={() => setShowFarmEdit(false)}
+        />
+      )}
       <header style={{ background: `linear-gradient(135deg, ${C.earth} 0%, ${C.forest} 100%)`, padding: "0 24px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 64, position: "sticky", top: 0, zIndex: 100, boxShadow: "0 2px 10px rgba(0,0,0,0.1)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <img src="/tractor-icon.jpg" alt="AgroSistem" style={{ width: 36, height: 36, borderRadius: "50%", objectFit: "cover" }} />
@@ -1493,6 +1809,9 @@ export default function App() {
             <select value={activeFarm || ""} onChange={(e) => setActiveFarm(Number(e.target.value))} style={{ padding: "6px 12px", borderRadius: 6, border: `1px solid ${C.wheatLight}`, background: "rgba(255,255,255,0.1)", color: C.cream, fontSize: 14, cursor: "pointer" }}>
               {farms.map((f) => <option key={f.id} value={f.id} style={{ color: C.text }}>{f.name}</option>)}
             </select>
+          )}
+          {activeFarmObj && (
+            <button onClick={() => setShowFarmEdit(true)} title="Editare date ferma" style={{ background: "rgba(255,255,255,0.15)", border: "none", color: C.wheatLight, padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 13, fontWeight: 500 }}>&#9998; Editare ferma</button>
           )}
           <span style={{ color: C.wheatLight, fontSize: 13, fontWeight: 500 }}>{user.name}</span>
           <button onClick={logout} style={{ background: "rgba(255,255,255,0.15)", border: "none", color: C.white, padding: "6px 14px", borderRadius: 6, cursor: "pointer", fontSize: 13, fontWeight: 500 }}>Iesire</button>
@@ -1511,15 +1830,15 @@ export default function App() {
         ) : (
           <>
             {tab === 0 && <TabDashboard blocks={blocks} seasons={seasons} harvests={harvests} works={works} />}
-            {tab === 1 && <TabTerenuri farmId={activeFarm} token={token} blocks={blocks} seasons={seasons} onRefresh={fetchData} />}
-            {tab === 2 && <TabCulturi token={token} blocks={blocks} crops={crops} seasons={seasons} onRefresh={fetchData} />}
-            {tab === 3 && <TabLucrari token={token} seasons={seasons} workTypes={workTypes} works={works} onRefresh={fetchData} />}
+            {tab === 1 && <TabTerenuri farmId={activeFarm} token={token} blocks={blocks} seasons={seasons} farm={activeFarmObj} onRefresh={fetchData} />}
+            {tab === 2 && <TabCulturi token={token} blocks={blocks} crops={crops} seasons={seasons} farm={activeFarmObj} onRefresh={fetchData} />}
+            {tab === 3 && <TabLucrari token={token} seasons={seasons} workTypes={workTypes} works={works} farm={activeFarmObj} onRefresh={fetchData} />}
             {tab === 4 && <TabFiseTehnice farmId={activeFarm} token={token} crops={crops} seasons={seasons} />}
-            {tab === 5 && <TabRecoltare farmId={activeFarm} token={token} seasons={seasons} crops={crops} harvests={harvests} onRefresh={fetchData} />}
-            {tab === 6 && <TabRapoarteApia farmId={activeFarm} token={token} />}
-            {tab === 7 && <TabRegistruFermier farmId={activeFarm} token={token} />}
-            {tab === 8 && <TabRegistruExploatatie farmId={activeFarm} token={token} />}
-            {tab === 9 && <TabMotorina farmId={activeFarm} token={token} seasons={seasons} fuelEntries={fuelEntries} onRefresh={fetchData} />}
+            {tab === 5 && <TabRecoltare farmId={activeFarm} token={token} seasons={seasons} crops={crops} harvests={harvests} farm={activeFarmObj} onRefresh={fetchData} />}
+            {tab === 6 && <TabRapoarteApia farmId={activeFarm} token={token} farm={activeFarmObj} />}
+            {tab === 7 && <TabRegistruFermier farmId={activeFarm} token={token} farm={activeFarmObj} />}
+            {tab === 8 && <TabRegistruExploatatie farmId={activeFarm} token={token} farm={activeFarmObj} />}
+            {tab === 9 && <TabMotorina farmId={activeFarm} token={token} seasons={seasons} fuelEntries={fuelEntries} farm={activeFarmObj} onRefresh={fetchData} />}
           </>
         )}
       </main>

@@ -26,6 +26,9 @@ const Farm = sequelize.define('Farm', {
   bank: {
     type: DataTypes.STRING,
   },
+  registerNumber: {
+    type: DataTypes.STRING,
+  },
 }, {
   timestamps: true,
 });

@@ -12,9 +12,16 @@ const initCrops = async () => {
       { name: "Rapiță", genus: "Brassica", type: "oleaginoase" },
       { name: "Soia", genus: "Glycine", type: "leguminoase" },
       { name: "Sfeclă de zahăr", genus: "Beta", type: "industriale" },
+      { name: "Teren necultivat / Pârloagă", genus: "Necultivat", type: "necultivat" },
     ];
     await Crop.bulkCreate(crops);
     console.log('Lista de culturi a fost initializata.');
+  } else {
+    // Asigura existenta culturii "Necultivat" pentru utilizatorii existenti
+    await Crop.findOrCreate({
+      where: { name: "Teren necultivat / Pârloagă" },
+      defaults: { genus: "Necultivat", type: "necultivat" },
+    });
   }
 };
 

@@ -8,7 +8,7 @@ const Parcel = sequelize.define('Parcel', {
     autoIncrement: true,
   },
   parcelNumber: {
-    type: DataTypes.INTEGER,
+    type: DataTypes.STRING,
     allowNull: false,
   },
   areaHa: {
